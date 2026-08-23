@@ -15,7 +15,7 @@ const PLATFORM_MODULES = [
   '@deepseek-ai/dsh-client-runtime/client',
 ]
 
-const ID = '@deepseek-ai/dsh-study-reader'
+const ID = 'dsh-study-reader'
 
 export default [
   {

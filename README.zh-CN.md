@@ -24,26 +24,27 @@ _空白状态示意图，不包含真实文献或用户数据。_
 
 ## 安装
 
-插件必须 clone 到 DeepSeek Harness 仓库根目录内，以便构建时链接 Harness 平台包：
+把插件 clone 到 DeepSeek Harness 仓库根目录内，然后运行一键安装命令：
 
 ```bash
 cd /你的绝对路径/deepseek-harness
 git clone git@github.com:Qqiutand/dsh-study-reader.git
 cd dsh-study-reader
-pnpm install
-pnpm run pack:dist
+pnpm run install:dsh -- --dsh-home "$HOME/.dsh"
 ```
 
-`pack:dist` 会在 `dist/` 中生成并验证可安装的 `.tgz`。然后选择 DSH 数据目录，并从 Harness 仓库根目录安装：
+它会安装依赖、构建并验证 `.tgz`、把插件安装到 `web` profile，再把自带的
+`reading` Agent 预设安装到同一个 DSH home。更新旧版时还会自动移除原包名
+`@deepseek-ai/dsh-study-reader`，并接管它已安装的预设。完成后重新启动
+`pnpm dsh web`。
+
+如果插件不是 Harness 根目录的直接子目录，可显式指定 Harness 路径：
 
 ```bash
-export DSH_HOME="$HOME/.dsh"
-cd ..
-pnpm dsh plugin --profile web add "$PWD/dsh-study-reader/dist/deepseek-ai-dsh-study-reader-0.5.0.tgz"
-pnpm dsh plugin --profile web exec dsh-study-reader-preset "$DSH_HOME" reading
+pnpm run install:dsh -- \
+  --dsh-home "$HOME/.dsh" \
+  --harness-root "/你的绝对路径/deepseek-harness"
 ```
-
-插件会安装到 `$DSH_HOME/profiles/web`，`reading` Agent 预设会安装到同一个 DSH home。安装或更新后，重新启动 `pnpm dsh web`。
 
 ## 配置
 

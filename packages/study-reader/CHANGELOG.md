@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Renamed the community distribution from `@deepseek-ai/dsh-study-reader` to `dsh-study-reader`; managed presets installed by the former name are adopted automatically.
+- Added `pnpm run install:dsh` to build, verify, install, migrate the former package name, and install the bundled `reading` preset in one explicit command.
+
 ## 0.5.0 - 2026-08-22
 
 - MinerU PDF revisions can be exported as a normalized ZIP containing Markdown, JSONL blocks, outline metadata, and referenced images.

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const HARNESS = resolve(ROOT, '..')
-const PACKAGE_NAME = '@deepseek-ai/dsh-study-reader'
+const PACKAGE_NAME = 'dsh-study-reader'
 const PACKAGE_VERSION = JSON.parse(await readFile(join(ROOT, 'packages/study-reader/package.json'), 'utf8')).version
 if (typeof PACKAGE_VERSION !== 'string' || PACKAGE_VERSION.trim() === '') throw new Error('Study Reader package version is missing')
 const TIMEOUT_MS = 90_000
@@ -33,7 +33,7 @@ const epub = join(home, 'minimal.epub')
 const pdf = join(home, 'six-pages.pdf')
 const sessionCache = join(home, 'storages', 'session_projcache.json')
 const evidenceDir = process.env.DSH_STUDY_READER_E2E_ARTIFACT_DIR ?? join(ROOT, 'artifacts', 'e2e-installed')
-const tgz = join(ROOT, 'dist', `deepseek-ai-dsh-study-reader-${PACKAGE_VERSION}.tgz`)
+const tgz = join(ROOT, 'dist', `dsh-study-reader-${PACKAGE_VERSION}.tgz`)
 const xdgConfig = join(home, 'xdg-config')
 const xdgData = join(home, 'xdg-data')
 const xdgCache = join(home, 'xdg-cache')

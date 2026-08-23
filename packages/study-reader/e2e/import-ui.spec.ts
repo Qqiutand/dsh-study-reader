@@ -414,7 +414,7 @@ test('post-uninstall profile has no Study Reader UI or routes', async ({ page, r
   await page.goto('/')
   await expect(page.locator('[data-dsh-study-root]')).toHaveCount(0)
   const [bundle, asset] = await Promise.all([
-    request.get('/plugins/@deepseek-ai/dsh-study-reader/client.js'),
+    request.get('/plugins/dsh-study-reader/client.js'),
     request.get('/study-reader/assets/probe'),
   ])
   expect(bundle.status(), 'removed Study Reader client bundle should not resolve').toBe(404)

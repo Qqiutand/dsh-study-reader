@@ -2,7 +2,7 @@
  * Plugin-owned Study workspace root. The controller follows the public
  * Session list/current projections, mounts one body child for a study-capable
  * Session, and never subscribes to or projects Agent conversation state.
- * @module @deepseek-ai/dsh-study-reader/client/StudyRoot
+ * @module dsh-study-reader/client/StudyRoot
  */
 
 import { createRoot, type Root } from 'react-dom/client'

@@ -1,13 +1,13 @@
 /**
  * Study Reader browser plugin. It mounts the generated Remote namespace and
  * plugin-owned browser surface without replacing Harness conversation views.
- * @module @deepseek-ai/dsh-study-reader/client
+ * @module dsh-study-reader/client
  */
 
 import type { ClientContext, ISessions } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
-import studyRemote from '@deepseek-ai/dsh-study-reader/remote'
+import studyRemote from 'dsh-study-reader/remote'
 import { StudyRootController } from './StudyRoot.tsx'
 import type { StudyRemote } from './remote.ts'
 import { en, STUDY_READER_LOCALE_NS, zh } from './locales.ts'

@@ -57,7 +57,7 @@
   name: '@deepseek-ai/dsh-tool-skill'
 
 - id: tool-study
-  name: '@deepseek-ai/dsh-study-reader/tools'
+  name: 'dsh-study-reader/tools'
 
 - id: tool-ask-user
   name: '@deepseek-ai/dsh-tool-ask-user'

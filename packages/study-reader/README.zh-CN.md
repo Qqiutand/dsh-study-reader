@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-study-reader
+# dsh-study-reader
 
 [English](README.md)
 
@@ -6,25 +6,14 @@ DeepSeek Harness 的文献库、无状态 PDF/EPUB 与 MinerU 预览，以及文
 
 ## 安装
 
-在插件源码目录构建安装包：
+插件源码放在 DeepSeek Harness 根目录内时，在源码目录运行：
 
 ```bash
-pnpm install
-pnpm run pack:dist
+pnpm run install:dsh -- --dsh-home "$HOME/.dsh"
 ```
 
-先显式选择安装目标，再到 DeepSeek Harness 仓库根目录执行。只有未设置
-`DSH_HOME` 时，Harness 才默认使用 `$HOME/.dsh`：
-
-```bash
-export DSH_HOME="$HOME/.dsh"
-pnpm dsh plugin --profile web add "/你的绝对路径/dist/deepseek-ai-dsh-study-reader-0.5.0.tgz"
-pnpm dsh plugin --profile web exec dsh-study-reader-preset "$DSH_HOME" reading
-```
-
-第一条命令把插件安装到 `$DSH_HOME/profiles/web`，不会安装到源码目录；
-第二条把插件自带的 `reading` Agent 预设安装到同一个 DSH home。完成后重新
-启动 `pnpm dsh web`。
+该命令会完成依赖安装、构建、安装包验证、`web` profile 安装以及 `reading`
+预设安装，并自动迁移旧包名。完成后重新启动 `pnpm dsh web`。
 
 ## 功能
 

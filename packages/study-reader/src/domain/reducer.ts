@@ -2,7 +2,7 @@
  * Pure durable-event reducer for Study Reader. The reducer is the single
  * projection used after refresh and for optimistic UI updates, so every branch
  * is deterministic and source-aware.
- * @module @deepseek-ai/dsh-study-reader/domain/reducer
+ * @module dsh-study-reader/domain/reducer
  */
 
 import type { SessionEventMap } from '@deepseek-ai/dsh-session/types'

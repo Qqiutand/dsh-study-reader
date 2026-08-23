@@ -23,7 +23,8 @@ mkdirSync(dirname(destination), { recursive: true, mode: 0o700 })
 const packageRoot = existsSync(resolve(here, 'package.json')) ? here : resolve(here, '..', '..')
 const version = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')).version
 const ownerFile = '.dsh-study-reader-preset.json'
-const owner = { owner: '@deepseek-ai/dsh-study-reader', preset: presetName, version }
+const owner = { owner: 'dsh-study-reader', preset: presetName, version }
+const legacyOwners = new Set(['@deepseek-ai/dsh-study-reader'])
 const temporary = `${destination}.install-${String(process.pid)}`
 rmSync(temporary, { recursive: true, force: true })
 cpSync(source, temporary, { recursive: true, force: false, errorOnExist: true })
@@ -36,7 +37,7 @@ if (!existsSync(destination)) {
   let owned = false
   try {
     const previous = JSON.parse(readFileSync(resolve(destination, ownerFile), 'utf8'))
-    owned = previous.owner === owner.owner && previous.preset === presetName
+    owned = (previous.owner === owner.owner || legacyOwners.has(previous.owner)) && previous.preset === presetName
   } catch {}
   if (!owned && !allowLegacyMigration) {
     rmSync(temporary, { recursive: true, force: true })

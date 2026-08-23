@@ -1,6 +1,6 @@
 /**
  * Core domain types for Study Reader: Cognitive Ladder, Cards, and Dossiers.
- * @module @deepseek-ai/dsh-study-reader/domain/types
+ * @module dsh-study-reader/domain/types
  */
 
 import type {

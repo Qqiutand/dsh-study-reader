@@ -65,7 +65,7 @@ const REGISTRY_RANGES = new Map([
 ])
 
 function tarballName(name, version) {
-  // npm pack filename convention: scopes become a dash (deepseek-ai-dsh-study-reader-0.1.0.tgz).
+  // npm pack filename convention: scopes become a dash; unscoped names stay unchanged.
   return `${name.replace('@', '').replace('/', '-')}-${version}.tgz`
 }
 
@@ -132,8 +132,8 @@ function stagePackage(manifest) {
 
 function build() {
   execFileSync(process.execPath, [join(ROOT, 'scripts', 'clean-build.mjs')], { cwd: ROOT, stdio: 'inherit' })
-  execFileSync(join(ROOT, '.tools', 'node_modules', '.bin', 'pnpm'), ['run', 'build:host'], { cwd: ROOT, stdio: 'inherit' })
-  execFileSync(join(ROOT, '.tools', 'node_modules', '.bin', 'pnpm'), ['run', 'build:client'], { cwd: ROOT, stdio: 'inherit' })
+  execFileSync('pnpm', ['run', 'build:host'], { cwd: ROOT, stdio: 'inherit' })
+  execFileSync('pnpm', ['run', 'build:client'], { cwd: ROOT, stdio: 'inherit' })
 }
 
 // A caller that has already completed both compilation faces can package those
@@ -152,3 +152,4 @@ const tarball = tarballName(manifest.name, manifest.version)
 execFileSync('npm', ['pack', '--pack-destination', DIST], { cwd: target, stdio: 'inherit' })
 const packed = join(DIST, tarball)
 console.log(`pack-dist: ${packed}`)
+execFileSync(process.execPath, [join(ROOT, 'scripts', 'verify-dist.mjs')], { cwd: ROOT, stdio: 'inherit' })

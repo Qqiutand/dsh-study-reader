@@ -1,6 +1,6 @@
 /**
  * Branded ID types for the study-reader domain.
- * @module @deepseek-ai/dsh-study-reader/protocol/ids
+ * @module dsh-study-reader/protocol/ids
  */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'

@@ -14,12 +14,12 @@
 - insert:
     # ── extraction capability seam ─────────────────────────────────────────
     - id: document-extraction
-      name: '@deepseek-ai/dsh-study-reader/extraction'
+      name: 'dsh-study-reader/extraction'
       config:
         provider: mineru
 
     - id: document-extraction-mineru
-      name: '@deepseek-ai/dsh-study-reader/mineru'
+      name: 'dsh-study-reader/mineru'
       config:
         providerId: mineru
         baseUrl: https://mineru.net
@@ -37,12 +37,12 @@
     # ── stable workspace + memory capability seam ──────────────────────────
     # The broker remains mounted while providers are rebuilt or hot-swapped.
     - id: study-memory
-      name: '@deepseek-ai/dsh-study-reader/memory'
+      name: 'dsh-study-reader/memory'
       config:
         provider: durable
 
     - id: study-memory-durable
-      name: '@deepseek-ai/dsh-study-reader/memory-durable'
+      name: 'dsh-study-reader/memory-durable'
       config:
         providerId: durable
         residentLimit: 50
@@ -53,14 +53,14 @@
     # Tool fibers keep this service while the concrete Study implementation
     # is rebuilt; every call resolves the active provider afresh.
     - id: study-agent
-      name: '@deepseek-ai/dsh-study-reader/agent'
+      name: 'dsh-study-reader/agent'
       config:
         provider: study
 
     # ── stable Blob publication/deletion coordinator ───────────────────────
     # This row outlives a hot-reloaded Study provider. Physical GC remains off.
     - id: study-blob-lifecycle
-      name: '@deepseek-ai/dsh-study-reader/study-blob-lifecycle'
+      name: 'dsh-study-reader/study-blob-lifecycle'
       config:
         storageRoot: !!js dshHomePath('study-reader')
 
@@ -68,7 +68,7 @@
     # The API key, signed upload URLs, and result archives never enter these
     # records; only the provider task id is durable.
     - id: study
-      name: '@deepseek-ai/dsh-study-reader/study'
+      name: 'dsh-study-reader/study'
       config:
         storageRoot: !!js dshHomePath('study-reader')
         uploadRoute: /study-reader/upload
@@ -112,4 +112,4 @@
           - .webp
     # ── browser surface (dsh.client row; the node half is an empty apply) ──
     - id: ui-study
-      name: '@deepseek-ai/dsh-study-reader'
+      name: 'dsh-study-reader'

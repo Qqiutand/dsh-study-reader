@@ -1,6 +1,6 @@
 /**
  * Spaced repetition retrieval card generator and SuperMemo SM-2 scheduler.
- * @module @deepseek-ai/dsh-study-reader/domain/cards
+ * @module dsh-study-reader/domain/cards
  */
 
 import { CardId, mintId, type SourceId } from '../protocol/ids.ts'

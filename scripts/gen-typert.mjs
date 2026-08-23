@@ -75,7 +75,7 @@ inventory.push({
 const workspace = new WorkspaceAnalyzer({
   root,
   faces: ['host'],
-  packages: ['@deepseek-ai/dsh-study-reader'],
+  packages: ['dsh-study-reader'],
   caches,
 }).analyze()
 
@@ -115,7 +115,7 @@ let emittedRemote = false
 for (const face of workspace.faces) {
   const emitter = new FaceModelEmitter(face)
   for (const packageModel of face.packages) {
-    if (packageModel.name !== '@deepseek-ai/dsh-study-reader') continue
+    if (packageModel.name !== 'dsh-study-reader') continue
     const artifact = {
       ...emitter.emit(packageModel.name),
       packageRoot: packageModel.root,

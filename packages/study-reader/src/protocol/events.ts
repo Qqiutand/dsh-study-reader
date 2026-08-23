@@ -11,7 +11,7 @@
  * ignorable records, and `Session.append` cannot mark an event ignorable.
  * The study domain owns its own event store instead.
  *
- * @module @deepseek-ai/dsh-study-reader/protocol/events
+ * @module dsh-study-reader/protocol/events
  */
 
 import type { SourceId, RevisionId, CardId, DossierId, FrictionId, RequestId } from './ids.ts'

@@ -2,7 +2,7 @@
  * Metacognitive study dossier synthesis. The report is source-scoped and
  * combines argument structure, Feynman explanations, friction points,
  * calibration/self-test comparison, bookmarks, and retrieval practice.
- * @module @deepseek-ai/dsh-study-reader/domain/dossier
+ * @module dsh-study-reader/domain/dossier
  */
 
 import { DossierId, mintId, type RevisionId, type SourceId } from '../protocol/ids.ts'

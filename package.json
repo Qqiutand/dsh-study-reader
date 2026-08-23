@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@11.7.0",
   "scripts": {
-    "build": "node scripts/clean-build.mjs && ./.tools/node_modules/.bin/pnpm run build:host && ./.tools/node_modules/.bin/pnpm run build:client",
+    "build": "node scripts/clean-build.mjs && pnpm run build:host && pnpm run build:client",
     "build:host": "tsc -b tsconfig.host.json && node scripts/gen-typert.mjs",
     "build:client": "tsc -b packages/study-reader/tsconfig.client.json && cd packages/study-reader && tsdown",
     "typecheck": "tsc -b tsconfig.host.json --pretty false && tsc -b tsconfig.client.json --pretty false",
@@ -15,6 +15,7 @@
     "fixture:epub": "node packages/study-reader/fixtures/build-minimal-epub.mjs",
     "probe:import": "node scripts/probe-import.mjs",
     "pack:dist": "node scripts/pack-dist.mjs",
+    "install:dsh": "node scripts/install-dsh.mjs",
     "pack:source": "node scripts/pack-source.mjs",
     "verify:source": "node scripts/verify-source.mjs",
     "verify:dist": "node scripts/verify-dist.mjs",

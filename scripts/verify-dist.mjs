@@ -70,7 +70,7 @@ if (tarballs.length !== 1) {
 const path = join(DIST, tarballs[0])
 execFileSync(process.execPath, [join(ROOT, 'scripts', 'check-text-encoding.mjs'), path], { stdio: 'inherit' })
 const manifest = manifestOf(path)
-if (manifest.name !== '@deepseek-ai/dsh-study-reader') {
+if (manifest.name !== 'dsh-study-reader') {
   errors.push(`verify-dist: unexpected package name ${manifest.name}`)
 }
 const files = new Set(tarList(path))
@@ -152,11 +152,11 @@ if (/require\(["']\.\/(?:[^"']*\.cjs)["']\)/.test(clientBundle)) {
 // Patch hygiene: host rows must be subpath exports of this package; the only
 // bare name allowed is the package itself (the dsh.client row).
 const patch = tarRead(path, 'package/cordis.patch.yml')
-const rows = [...patch.matchAll(/name: (@deepseek-ai\/dsh-[a-z0-9-]+(?:[./][a-z0-9-]+)*)/g)].map(match => match[1])
+const rows = [...patch.matchAll(/name:\s*['"]?(dsh-study-reader(?:\/[a-z0-9-]+)?)['"]?/g)].map(match => match[1])
 const exportsSet = new Set(Object.keys(manifest.exports ?? {}))
 for (const row of rows) {
   if (row === manifest.name) continue
-  const subpath = row.slice(manifest.name.length)
+  const subpath = `.${row.slice(manifest.name.length)}`
   if (!exportsSet.has(subpath)) {
     errors.push(`patch row ${row} is not a subpath export of ${manifest.name}`)
   }

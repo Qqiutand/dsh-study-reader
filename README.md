@@ -24,26 +24,28 @@ _Illustrative empty state with no real documents or user data._
 
 ## Installation
 
-Clone the plugin inside the DeepSeek Harness repository root so the build can link to Harness platform packages:
+Clone the plugin inside the DeepSeek Harness repository root, then run the one-command installer:
 
 ```bash
 cd /absolute/path/to/deepseek-harness
 git clone git@github.com:Qqiutand/dsh-study-reader.git
 cd dsh-study-reader
-pnpm install
-pnpm run pack:dist
+pnpm run install:dsh -- --dsh-home "$HOME/.dsh"
 ```
 
-`pack:dist` creates and verifies an installable `.tgz` under `dist/`. Then choose the DSH data directory and install from the Harness repository root:
+It installs dependencies, builds and verifies the `.tgz`, adds the plugin to the
+`web` profile, and installs the bundled `reading` agent preset into the same
+DSH home. On upgrade, it also removes the former
+`@deepseek-ai/dsh-study-reader` package name and adopts its managed preset.
+Restart `pnpm dsh web` afterwards.
+
+If the plugin is not a direct child of the Harness root, pass that path explicitly:
 
 ```bash
-export DSH_HOME="$HOME/.dsh"
-cd ..
-pnpm dsh plugin --profile web add "$PWD/dsh-study-reader/dist/deepseek-ai-dsh-study-reader-0.5.0.tgz"
-pnpm dsh plugin --profile web exec dsh-study-reader-preset "$DSH_HOME" reading
+pnpm run install:dsh -- \
+  --dsh-home "$HOME/.dsh" \
+  --harness-root "/absolute/path/to/deepseek-harness"
 ```
-
-The plugin is installed under `$DSH_HOME/profiles/web`, and the `reading` agent preset is installed into the same DSH home. Restart `pnpm dsh web` after installing or updating.
 
 ## Configuration
 
