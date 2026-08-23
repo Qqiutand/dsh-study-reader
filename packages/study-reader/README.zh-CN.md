@@ -13,7 +13,7 @@ pnpm run install:dsh -- --dsh-home "$HOME/.dsh"
 ```
 
 该命令会完成依赖安装、构建、安装包验证、`web` profile 安装以及 `reading`
-预设安装，并自动迁移旧包名。完成后重新启动 `pnpm dsh web`。
+预设安装。完成后重新启动 `pnpm dsh web`。
 
 ## 功能
 

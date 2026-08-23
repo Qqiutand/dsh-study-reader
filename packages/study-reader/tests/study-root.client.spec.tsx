@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 
-import { act, fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ISessions, SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
-import { StudyRootController } from '../src/client/StudyRoot.tsx'
+import {
+  compositionProvidesStudyReaderTools,
+  StudyRootController,
+  type AgentPresetReader,
+} from '../src/client/StudyRoot.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
 vi.mock('../src/client/ReadingWorkspace.tsx', () => ({
@@ -45,7 +49,7 @@ function listFor(id: SessionId | undefined, preset = 'reading', blank = true): S
   } as unknown as SessionListState
 }
 
-function controllerFor(initial: SessionListState) {
+function controllerFor(initial: SessionListState, agentPresetsApi?: AgentPresetReader) {
   const list = new Snapshot(initial)
   const currentProvideInfo = {
     getSnapshot: () => ({ sessionId: list.getSnapshot().current, hooks: {}, props: {} }),
@@ -55,6 +59,7 @@ function controllerFor(initial: SessionListState) {
   const controller = new StudyRootController({
     sessions,
     studyRemote: undefined,
+    ...agentPresetsApi === undefined ? {} : { agentPresetsApi },
     document,
     locale: testLocale(),
   })
@@ -86,6 +91,13 @@ afterEach(() => {
 })
 
 describe('StudyRootController', () => {
+  it('recognizes only a Study Reader Tool composition row as the capability marker', () => {
+    expect(compositionProvidesStudyReaderTools("- id: tool-study\n  name: 'dsh-study-reader/tools'\n")).toBe(true)
+    expect(compositionProvidesStudyReaderTools('- id: tool-study\n  name: dsh-study-reader/tools # copied preset\n')).toBe(true)
+    expect(compositionProvidesStudyReaderTools('# name: dsh-study-reader/tools\n- id: other\n  name: dsh-study-reader/tool\n')).toBe(false)
+    expect(compositionProvidesStudyReaderTools('- id: persona\n  name: persona\n  config:\n    text: |-\n      name: dsh-study-reader/tools\n')).toBe(false)
+  })
+
   it('renders the complete shell from the active Host English locale', () => {
     const list = new Snapshot(listFor(sessionId('reading-en')))
     const currentProvideInfo = { getSnapshot: () => ({ sessionId: list.getSnapshot().current, hooks: {}, props: {} }), subscribe: (listener: () => void) => list.subscribe(listener) }
@@ -116,6 +128,63 @@ describe('StudyRootController', () => {
 
     expect(document.body.querySelector('[data-dsh-study-root]')).toBeNull()
     expect(document.head.querySelector('[data-dsh-study-root-style]')).toBeNull()
+
+    act(() => { dispose() })
+  })
+
+  it('mounts the Bookroom for a copied preset that still composes the Reader Tool', async () => {
+    const read = vi.fn(async () => ({
+      result: {
+        ok: true as const,
+        value: { content: "- id: tool-study\n  name: 'dsh-study-reader/tools'\n" },
+      },
+    }))
+    const { controller } = controllerFor(listFor(sessionId('copied-session'), 'my-reading-copy'), { read })
+    let dispose!: () => void
+    act(() => { dispose = controller.start() })
+
+    await waitFor(() => expect(document.body.querySelector('[data-dsh-study-root]')).not.toBeNull())
+    expect(read).toHaveBeenCalledWith({ agentPreset: 'my-reading-copy' })
+    expect(document.body.querySelector('[data-dsh-study-root]')?.getAttribute('data-preset')).toBe('my-reading-copy')
+
+    act(() => { dispose() })
+  })
+
+  it('keeps an unrelated custom preset outside the Bookroom', async () => {
+    const read = vi.fn(async () => ({
+      result: {
+        ok: true as const,
+        value: { content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n" },
+      },
+    }))
+    const { controller } = controllerFor(listFor(sessionId('coding-session'), 'my-coding-copy'), { read })
+    let dispose!: () => void
+    act(() => { dispose = controller.start() })
+
+    await waitFor(() => expect(read).toHaveBeenCalledWith({ agentPreset: 'my-coding-copy' }))
+    expect(document.body.querySelector('[data-dsh-study-root]')).toBeNull()
+
+    act(() => { dispose() })
+  })
+
+  it('does not mount a late copied-preset result after the current Session changes', async () => {
+    let resolveCopied!: (value: Awaited<ReturnType<AgentPresetReader['read']>>) => void
+    const copied = new Promise<Awaited<ReturnType<AgentPresetReader['read']>>>(resolve => { resolveCopied = resolve })
+    const read = vi.fn((request: { readonly agentPreset: string }) => request.agentPreset === 'my-reading-copy'
+      ? copied
+      : Promise.resolve({ result: { ok: true as const, value: { content: '- id: other\n  name: cordis:group\n' } } }))
+    const current = sessionId('copied-race')
+    const { controller, list } = controllerFor(listFor(current, 'my-reading-copy'), { read })
+    let dispose!: () => void
+    act(() => { dispose = controller.start() })
+    act(() => { list.publish(listFor(sessionId('standard-after-copy'), 'standard')) })
+    await act(async () => {
+      resolveCopied({ result: { ok: true, value: { content: "- id: tool-study\n  name: 'dsh-study-reader/tools'\n" } } })
+      await copied
+    })
+
+    expect(document.body.querySelector('[data-dsh-study-root]')).toBeNull()
+    expect(read).toHaveBeenCalledWith({ agentPreset: 'standard' })
 
     act(() => { dispose() })
   })

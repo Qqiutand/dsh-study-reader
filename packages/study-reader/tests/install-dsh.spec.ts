@@ -20,10 +20,12 @@ describe('one-command DSH installer', () => {
     expect(result.stderr).toContain('--dsh-home must be an absolute path')
   })
 
-  it('installs the prebuilt profile package without dependency lifecycle scripts', () => {
+  it('installs a durable, explicitly named profile package without dependency lifecycle scripts', () => {
     const source = readFileSync(installer, 'utf8')
 
-    expect(source).toContain("'add', '--ignore-scripts', tarball")
-    expect(source).toContain("'remove', '--ignore-scripts', LEGACY_PACKAGE")
+    expect(source).toContain("join(dshHome, '.plugin-packages', sourceManifest.name)")
+    expect(source).toContain('copyFileSync(tarball, cachedTarball)')
+    expect(source).toContain('`${sourceManifest.name}@file:${cachedTarball}`')
+    expect(source).toContain("'add', '--ignore-scripts', packageSpec")
   })
 })

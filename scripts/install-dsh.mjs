@@ -2,13 +2,12 @@
 /** Build and install Study Reader plus its reading preset in one explicit command. */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const LEGACY_PACKAGE = '@deepseek-ai/dsh-study-reader'
 
 const usage = `Usage: pnpm run install:dsh -- [options]
 
@@ -86,12 +85,6 @@ if (sourceManifest.name !== 'dsh-study-reader') {
 }
 const tarballName = `${sourceManifest.name.replace('@', '').replace('/', '-')}-${sourceManifest.version}.tgz`
 const tarball = join(ROOT, 'dist', tarballName)
-const profileManifestPath = join(dshHome, 'profiles', profile, 'package.json')
-let legacyInstalled = false
-if (existsSync(profileManifestPath)) {
-  const profileManifest = JSON.parse(readFileSync(profileManifestPath, 'utf8'))
-  legacyInstalled = Object.hasOwn(profileManifest.dependencies ?? {}, LEGACY_PACKAGE)
-}
 
 const npmExecPath = process.env.npm_execpath
 function runPnpm(commandArgs, cwd, env = process.env) {
@@ -107,14 +100,22 @@ runPnpm(['install'], ROOT)
 runPnpm(['run', 'pack:dist'], ROOT)
 if (!existsSync(tarball)) throw new Error(`distribution tarball was not created: ${tarball}`)
 
+// Keep the installed file dependency inside DSH_HOME. A source checkout may
+// later rebuild or remove dist/, but unrelated profile operations must still
+// be able to resolve every dependency already recorded by pnpm.
+const packageCache = join(dshHome, '.plugin-packages', sourceManifest.name)
+const cachedTarball = join(packageCache, tarballName)
+mkdirSync(packageCache, { recursive: true, mode: 0o700 })
+copyFileSync(tarball, cachedTarball)
+
 const dshEnv = { ...process.env, DSH_HOME: dshHome }
 // The tarball is already built and verified. Disabling dependency lifecycle
 // scripts avoids pnpm's approval prompt and gives the installer no implicit
 // code-execution path inside the user's profile.
-runPnpm(['dsh', 'plugin', '--profile', profile, 'add', '--ignore-scripts', tarball], harnessRoot, dshEnv)
-if (legacyInstalled) {
-  runPnpm(['dsh', 'plugin', '--profile', profile, 'remove', '--ignore-scripts', LEGACY_PACKAGE], harnessRoot, dshEnv)
-}
+// Naming the package explicitly also lets pnpm replace a prior file: spec even
+// if that prior tarball has already disappeared.
+const packageSpec = `${sourceManifest.name}@file:${cachedTarball}`
+runPnpm(['dsh', 'plugin', '--profile', profile, 'add', '--ignore-scripts', packageSpec], harnessRoot, dshEnv)
 const presetArgs = [
   'dsh', 'plugin', '--profile', profile, 'exec',
   'dsh-study-reader-preset', dshHome, 'reading',

@@ -27,6 +27,7 @@ export async function apply(ctx: ClientContext): Promise<void> {
   const studyRoot = new StudyRootController({
     sessions: ctx.get('sessions') as unknown as Pick<ISessions, 'list' | 'currentProvideInfo'>,
     studyRemote: ctx.get('remote.study' as never) as StudyRemote | undefined,
+    agentPresetsApi: api.agentPresets,
     credentialsApi: api.credentials,
     locale,
   })

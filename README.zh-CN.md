@@ -34,9 +34,7 @@ pnpm run install:dsh -- --dsh-home "$HOME/.dsh"
 ```
 
 它会安装依赖、构建并验证 `.tgz`、把插件安装到 `web` profile，再把自带的
-`reading` Agent 预设安装到同一个 DSH home。更新旧版时还会自动移除原包名
-`@deepseek-ai/dsh-study-reader`，并接管它已安装的预设。完成后重新启动
-`pnpm dsh web`。
+`reading` Agent 预设安装到同一个 DSH home。完成后重新启动 `pnpm dsh web`。
 
 如果插件不是 Harness 根目录的直接子目录，可显式指定 Harness 路径：
 

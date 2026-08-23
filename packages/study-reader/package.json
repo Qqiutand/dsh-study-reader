@@ -1,7 +1,7 @@
 {
   "name": "dsh-study-reader",
   "description": "Document library, bounded preview, and evidence tools for DeepSeek Harness",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "main": "lib/types/index.js",

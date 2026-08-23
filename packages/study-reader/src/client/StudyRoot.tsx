@@ -18,6 +18,7 @@ const ROOT_ATTRIBUTE = 'data-dsh-study-root'
 const STYLE_ATTRIBUTE = 'data-dsh-study-root-style'
 const STORAGE_KEY = 'dsh.study-reader.surface.v1'
 const STUDY_PRESETS = new Set(['reading'])
+const STUDY_TOOL_PACKAGE = 'dsh-study-reader/tools'
 
 /** Top-level surface owned by the Study plugin for one Session. */
 export type StudySurface = 'chat' | 'study'
@@ -33,9 +34,19 @@ export interface StudyActivation {
 export interface StudyRootDependencies {
   readonly sessions: Pick<ISessions, 'list' | 'currentProvideInfo'>
   readonly studyRemote: StudyRemote | undefined
+  readonly agentPresetsApi?: AgentPresetReader
   readonly credentialsApi?: MinerUSettingsProps['credentials']
   readonly document?: Document
   readonly locale: StudyLocaleFace
+}
+
+/** Minimal Host API face used to inspect a copied preset's composition. */
+export interface AgentPresetReader {
+  readonly read: (request: { readonly agentPreset: string }) => Promise<{
+    readonly result:
+      | { readonly ok: true; readonly value: { readonly content: string } }
+      | { readonly ok: false }
+  }>
 }
 
 interface MountedStudyRoot extends StudyActivation {
@@ -45,13 +56,39 @@ interface MountedStudyRoot extends StudyActivation {
   surface: StudySurface
 }
 
-/** Resolve whether the current Session owns Study UI. */
-export function resolveStudyActivation(snapshot: SessionListState, current = snapshot.current): StudyActivation | undefined {
+/** Resolve the active Session's preset facts without deciding its capabilities. */
+function resolvePresetActivation(snapshot: SessionListState, current = snapshot.current): StudyActivation | undefined {
   if (current === undefined) return undefined
   const summary = snapshot.byId[current]
   const preset = summary?.agentPreset
-  if (summary === undefined || preset === undefined || !STUDY_PRESETS.has(preset)) return undefined
+  if (summary === undefined || preset === undefined) return undefined
   return { sessionId: current, preset, blank: summary.blank }
+}
+
+/** Resolve whether the current Session owns Study UI. */
+export function resolveStudyActivation(
+  snapshot: SessionListState,
+  current = snapshot.current,
+  studyPresets: ReadonlySet<string> = STUDY_PRESETS,
+): StudyActivation | undefined {
+  const activation = resolvePresetActivation(snapshot, current)
+  return activation !== undefined && studyPresets.has(activation.preset) ? activation : undefined
+}
+
+/** Detect the normal Cordis row emitted by Study Reader and preserved by preset copies. */
+export function compositionProvidesStudyReaderTools(content: string): boolean {
+  let topLevelRow = false
+  for (const line of content.split(/\r?\n/u)) {
+    if (/^-\s+id\s*:/u.test(line)) {
+      topLevelRow = true
+      continue
+    }
+    if (/^-\s+/u.test(line)) topLevelRow = false
+    if (!topLevelRow) continue
+    const match = /^ {2}name\s*:\s*(?:'([^']+)'|"([^"]+)"|([^\s#]+))\s*(?:#.*)?$/u.exec(line)
+    if ((match?.[1] ?? match?.[2] ?? match?.[3]) === STUDY_TOOL_PACKAGE) return true
+  }
+  return false
 }
 
 function readStoredSurfaces(storage: Storage | undefined): Record<string, StudySurface> {
@@ -84,10 +121,14 @@ function writeStoredSurfaces(storage: Storage | undefined, value: Readonly<Recor
 export class StudyRootController {
   private readonly document: Document
   private readonly surfaces: Record<string, StudySurface>
+  private readonly studyPresets = new Set(STUDY_PRESETS)
+  private readonly nonStudyPresets = new Set<string>()
+  private readonly presetChecks = new Map<string, Promise<boolean>>()
   private mounted: MountedStudyRoot | undefined
   private unsubscribeList: (() => void) | undefined
   private unsubscribeCurrent: (() => void) | undefined
   private started = false
+  private synchronizeRevision = 0
 
   constructor(private readonly deps: StudyRootDependencies) {
     this.document = deps.document ?? document
@@ -114,12 +155,28 @@ export class StudyRootController {
   }
 
   private synchronizeCurrent(): void {
+    const revision = this.synchronizeRevision + 1
+    this.synchronizeRevision = revision
     const current = this.deps.sessions.currentProvideInfo.getSnapshot().sessionId
-    const activation = resolveStudyActivation(this.deps.sessions.list.getSnapshot(), current)
+    const snapshot = this.deps.sessions.list.getSnapshot()
+    const activation = resolveStudyActivation(snapshot, current, this.studyPresets)
     if (activation === undefined) {
       this.deactivate()
+      const candidate = resolvePresetActivation(snapshot, current)
+      if (candidate !== undefined && !this.nonStudyPresets.has(candidate.preset)) {
+        void this.checkPreset(candidate.preset).then(capable => {
+          if (!this.started || !capable || revision !== this.synchronizeRevision) return
+          const latestCurrent = this.deps.sessions.currentProvideInfo.getSnapshot().sessionId
+          const latest = resolvePresetActivation(this.deps.sessions.list.getSnapshot(), latestCurrent)
+          if (latest?.sessionId === candidate.sessionId && latest.preset === candidate.preset) this.present(latest)
+        })
+      }
       return
     }
+    this.present(activation)
+  }
+
+  private present(activation: StudyActivation): void {
     if (this.mounted === undefined) {
       this.activate(activation)
       return
@@ -133,6 +190,26 @@ export class StudyRootController {
       this.mounted = { ...this.mounted, ...activation }
       this.render()
     }
+  }
+
+  private checkPreset(preset: string): Promise<boolean> {
+    if (this.studyPresets.has(preset)) return Promise.resolve(true)
+    if (this.nonStudyPresets.has(preset) || this.deps.agentPresetsApi === undefined) return Promise.resolve(false)
+    const existing = this.presetChecks.get(preset)
+    if (existing !== undefined) return existing
+    const pending = this.deps.agentPresetsApi.read({ agentPreset: preset })
+      .then(response => response.result.ok && compositionProvidesStudyReaderTools(response.result.value.content))
+      .catch(() => false)
+      .then(capable => {
+        if (capable) this.studyPresets.add(preset)
+        else this.nonStudyPresets.add(preset)
+        return capable
+      })
+    this.presetChecks.set(preset, pending)
+    void pending.finally(() => {
+      if (this.presetChecks.get(preset) === pending) this.presetChecks.delete(preset)
+    })
+    return pending
   }
 
   private activate(activation: StudyActivation): void {

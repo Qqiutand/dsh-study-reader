@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 - 2026-08-24
 
-- Renamed the community distribution from `@deepseek-ai/dsh-study-reader` to `dsh-study-reader`; managed presets installed by the former name are adopted automatically.
-- Added `pnpm run install:dsh` to build, verify, install, migrate the former package name, and install the bundled `reading` preset in one explicit command.
+- Published the community distribution as `dsh-study-reader`.
+- Added `pnpm run install:dsh` to build, verify, and install both the web-profile bundle and bundled `reading` preset in one explicit command; installed tarballs live under `DSH_HOME` so source rebuilds cannot break profile dependencies.
+- Copied or custom DSH agent presets that still compose `dsh-study-reader/tools` now activate the Bookroom by capability instead of requiring the fixed `reading` id; the preset chooser description is also shorter.
 
 ## 0.5.0 - 2026-08-22
 

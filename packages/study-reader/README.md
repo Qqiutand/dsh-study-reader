@@ -13,8 +13,7 @@ pnpm run install:dsh -- --dsh-home "$HOME/.dsh"
 ```
 
 This installs dependencies, builds and verifies the package, installs the
-`web` profile bundle and its `reading` preset, and migrates the former package
-name automatically. Restart `pnpm dsh web` afterwards.
+`web` profile bundle and its `reading` preset. Restart `pnpm dsh web` afterwards.
 
 ## Features
 

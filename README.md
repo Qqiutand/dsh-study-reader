@@ -35,9 +35,7 @@ pnpm run install:dsh -- --dsh-home "$HOME/.dsh"
 
 It installs dependencies, builds and verifies the `.tgz`, adds the plugin to the
 `web` profile, and installs the bundled `reading` agent preset into the same
-DSH home. On upgrade, it also removes the former
-`@deepseek-ai/dsh-study-reader` package name and adopts its managed preset.
-Restart `pnpm dsh web` afterwards.
+DSH home. Restart `pnpm dsh web` afterwards.
 
 If the plugin is not a direct child of the Harness root, pass that path explicitly:
 
