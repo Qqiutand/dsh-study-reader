@@ -1,0 +1,38 @@
+{
+  "name": "dsh-study-reader-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "build": "node scripts/clean-build.mjs && ./.tools/node_modules/.bin/pnpm run build:host && ./.tools/node_modules/.bin/pnpm run build:client",
+    "build:host": "tsc -b tsconfig.host.json && node scripts/gen-typert.mjs",
+    "build:client": "tsc -b packages/study-reader/tsconfig.client.json && cd packages/study-reader && tsdown",
+    "typecheck": "tsc -b tsconfig.host.json --pretty false && tsc -b tsconfig.client.json --pretty false",
+    "test": "node scripts/check-text-encoding.mjs && node scripts/check-prompt-contract.mjs && vitest run",
+    "check:encoding": "node scripts/check-text-encoding.mjs",
+    "check:prompts": "node scripts/check-prompt-contract.mjs",
+    "test:watch": "vitest",
+    "fixture:epub": "node packages/study-reader/fixtures/build-minimal-epub.mjs",
+    "probe:import": "node scripts/probe-import.mjs",
+    "pack:dist": "node scripts/pack-dist.mjs",
+    "pack:source": "node scripts/pack-source.mjs",
+    "verify:source": "node scripts/verify-source.mjs",
+    "verify:dist": "node scripts/verify-dist.mjs",
+    "test:e2e:isolated": "node scripts/run-isolated-e2e.mjs"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-typert-generator": "link:../packages/typert/generator",
+    "@playwright/test": "^1.62.1",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "^18.3.7",
+    "js-yaml": "^4.1.0",
+    "jsdom": "^25.0.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

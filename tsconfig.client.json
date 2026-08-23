@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": [
+    "packages/study-reader/tests/**/*.client.spec.ts",
+    "packages/study-reader/tests/**/*.client.spec.tsx"
+  ],
+  "references": [
+    {
+      "path": "./packages/study-reader/tsconfig.client.json"
+    }
+  ]
+}

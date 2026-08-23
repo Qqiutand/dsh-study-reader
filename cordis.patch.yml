@@ -1,0 +1,115 @@
+# The dsh-study-reader bundle patch: the study reader's host rows over the
+# dsh-base + dsh-web-app layers. Applied after both, so rows here can override
+# base rows by id, with the profile's own cordis.patch.yml still to come.
+#
+# All rows are HOST-plane: the extraction registry, its MinerU provider, the
+# stable memory broker/provider, the stable Agent-operation broker, the study
+# domain service (whose Remote endpoints the Gateway resolves on the
+# host), and the browser surface. The model-facing tool row lives in the
+# reading agent preset instead.
+#
+# A patch replaces the targeted row's whole `config`, so each row below
+# restates every key it owns.
+
+- insert:
+    # ── extraction capability seam ─────────────────────────────────────────
+    - id: document-extraction
+      name: '@deepseek-ai/dsh-study-reader/extraction'
+      config:
+        provider: mineru
+
+    - id: document-extraction-mineru
+      name: '@deepseek-ai/dsh-study-reader/mineru'
+      config:
+        providerId: mineru
+        baseUrl: https://mineru.net
+        apiMode: cloud-v4
+        apiKeyRef: MINERU_API_KEY
+        modelVersion: vlm
+        localBackend: pipeline
+        language: ch
+        enableTable: true
+        enableFormula: true
+        isOcr: false
+        requestTimeoutMs: 30000
+        maxArtifactBytes: 536870912
+
+    # ── stable workspace + memory capability seam ──────────────────────────
+    # The broker remains mounted while providers are rebuilt or hot-swapped.
+    - id: study-memory
+      name: '@deepseek-ai/dsh-study-reader/memory'
+      config:
+        provider: durable
+
+    - id: study-memory-durable
+      name: '@deepseek-ai/dsh-study-reader/memory-durable'
+      config:
+        providerId: durable
+        residentLimit: 50
+        contextItems: 8
+        contextChars: 4000
+
+    # ── stable Agent-operation capability seam ─────────────────────────────
+    # Tool fibers keep this service while the concrete Study implementation
+    # is rebuilt; every call resolves the active provider afresh.
+    - id: study-agent
+      name: '@deepseek-ai/dsh-study-reader/agent'
+      config:
+        provider: study
+
+    # ── stable Blob publication/deletion coordinator ───────────────────────
+    # This row outlives a hot-reloaded Study provider. Physical GC remains off.
+    - id: study-blob-lifecycle
+      name: '@deepseek-ai/dsh-study-reader/study-blob-lifecycle'
+      config:
+        storageRoot: !!js dshHomePath('study-reader')
+
+    # ── study domain: persistence, polling, PDF/EPUB import, asset serving, Remote ───────
+    # The API key, signed upload URLs, and result archives never enter these
+    # records; only the provider task id is durable.
+    - id: study
+      name: '@deepseek-ai/dsh-study-reader/study'
+      config:
+        storageRoot: !!js dshHomePath('study-reader')
+        uploadRoute: /study-reader/upload
+        assetRoute: /study-reader/assets
+        uploadTicketTtlMs: 900000
+        maxFileBytes: 209715200
+        maxProviderPagesPerPart: 200
+        maxArchiveBytes: 536870912
+        maxUncompressedBytes: 1073741824
+        maxArchiveEntries: 10000
+        maxEntryBytes: 268435456
+        pollTickMs: 1000
+        pollInitialMs: 3000
+        pollMaxMs: 30000
+        maxConcurrentPolls: 4
+        cognitivePollMs: 1000
+        cognitiveTimeoutMs: 180000
+        cognitiveAdmissionAttempts: 3
+        cognitiveAdmissionRetryMs: 250
+        maxReadChars: 30000
+        maxSearchResults: 20
+        maxGraphNodes: 200
+        maxGraphEdges: 400
+        blobGcEnabled: false
+        defaultLanguage: ch
+        defaultIsOcr: false
+        defaultEnableTable: true
+        defaultEnableFormula: true
+        acceptExtensions:
+          - .pdf
+          - .epub
+          - .doc
+          - .docx
+          - .ppt
+          - .pptx
+          - .png
+          - .jpg
+          - .jpeg
+          - .bmp
+          - .tiff
+          - .webp
+    # ── browser surface (dsh.client row; the node half is an empty apply) ──
+    - id: ui-study
+      name: '@deepseek-ai/dsh-study-reader'

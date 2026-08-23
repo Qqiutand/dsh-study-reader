@@ -1,0 +1,32 @@
+# Dependencies and local package-manager state
+node_modules/
+.tools/
+
+# Generated build and package output
+dist/
+**/lib/
+**/pdfjs-wasm/
+*.tsbuildinfo
+*.tgz
+*.tar.gz
+
+# Test and browser artifacts
+test-results/
+playwright-report/
+artifacts/
+coverage/
+
+# Local Harness profiles and scratch state
+.dsh*/
+.tmp-*
+*.log
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/

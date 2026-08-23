@@ -1,0 +1,58 @@
+/** Study Reader browser UI dictionaries. */
+export const STUDY_READER_LOCALE_NS = 'study-reader'
+
+export const zh = {
+  'locale.code': 'zh',
+  'surface.chat': '对话',
+  'surface.study': '书房',
+  'surface.switcher': '研读视图切换',
+  'error.title': '书房暂时无法显示',
+  'error.body': '某个界面组件发生了错误。对话和其他 DSH 功能不受影响。',
+  'error.details': '技术信息',
+  'action.retry': '重试',
+  'nav.overview': '总览',
+  'nav.library': '全部文献',
+  'nav.profiles': '配置预设',
+  'nav.prompts': '提示词注入',
+  'nav.skills': 'Skills',
+  'nav.tools': 'Tools',
+  'nav.permissions': '访问权限',
+  'nav.services': '服务连接',
+  'group.overview': '概览',
+  'group.library': '文献库',
+  'group.assistant': '助手设置',
+  'group.access': '连接与权限',
+  'profile.default': '当前：默认预设',
+  'profile.unavailable': '配置预设暂不可用',
+  'settings.unavailable': '设置服务暂不可用',
+  'tree.resize': '调整资产导航宽度',
+} as const
+
+export type StudyReaderLocaleKey = keyof typeof zh
+
+export const en: Record<StudyReaderLocaleKey, string> = {
+  'locale.code': 'en',
+  'surface.chat': 'Chat',
+  'surface.study': 'Bookroom',
+  'surface.switcher': 'Reading workspace view',
+  'error.title': 'Bookroom could not be displayed',
+  'error.body': 'A workspace component failed. Chat and the rest of DSH are unaffected.',
+  'error.details': 'Technical details',
+  'action.retry': 'Retry',
+  'nav.overview': 'Overview',
+  'nav.library': 'All documents',
+  'nav.profiles': 'Configuration presets',
+  'nav.prompts': 'Prompt injections',
+  'nav.skills': 'Skills',
+  'nav.tools': 'Tools',
+  'nav.permissions': 'Access',
+  'nav.services': 'Service connections',
+  'group.overview': 'Overview',
+  'group.library': 'Library',
+  'group.assistant': 'Assistant settings',
+  'group.access': 'Connections and access',
+  'profile.default': 'Current: Default preset',
+  'profile.unavailable': 'Configuration presets are unavailable',
+  'settings.unavailable': 'Settings are unavailable',
+  'tree.resize': 'Resize asset navigation',
+}
