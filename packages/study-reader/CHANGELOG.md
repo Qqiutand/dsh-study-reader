@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2 - 2026-08-24
+
+- Corrected the `reading` preset description to advertise only currently reachable Reader Tools and bundled Skills.
+
 ## 0.5.1 - 2026-08-24
 
 - Published the community distribution as `dsh-study-reader`.
