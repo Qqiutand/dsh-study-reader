@@ -62,7 +62,7 @@ function ToolDetail({ tool }: { readonly tool: ToolDescriptorView }) {
 }
 
 function riskLabel(risk: ToolDescriptorView['risk'], b: BilingualText): string {
-  return risk === 'read' ? b('只读', 'Read only') : risk === 'navigate' ? b('导航', 'Navigation') : b('写入', 'Write')
+  return risk === 'read' ? b('只读', 'Read only') : b('写入', 'Write')
 }
 
 function DetailSection(props: { readonly title: string; readonly children: ReactNode }) {

@@ -25,14 +25,12 @@ export interface SerializedStudyReaderProfile {
   readonly allowedTools?: readonly ReaderToolName[]
   readonly allowLibraryWideSearch?: boolean
   readonly allowPersistentWrites?: boolean
+  /** Shared discovery budget. Final evidence reads and an authorized save have separate reserves. */
   readonly maxToolCallsPerTurn?: number
   readonly maxToolAttemptsPerTurn?: number
 }
 
-const DEFAULT_PROFILE_TOOLS: readonly ReaderToolName[] = [
-  ...CORE_READER_TOOL_NAMES,
-  'reader_open_location',
-]
+const DEFAULT_PROFILE_TOOLS: readonly ReaderToolName[] = [...CORE_READER_TOOL_NAMES]
 
 function boundedInteger(value: number | undefined, fallback: number, minimum: number, maximum: number): number {
   return Number.isInteger(value) ? Math.max(minimum, Math.min(maximum, value as number)) : fallback
@@ -50,7 +48,7 @@ export function normalizeStudyReaderProfile(input: SerializedStudyReaderProfile 
     allowLibraryWideSearch: input.allowLibraryWideSearch ?? true,
     allowPersistentWrites: input.allowPersistentWrites ?? false,
     maxToolCallsPerTurn: boundedInteger(input.maxToolCallsPerTurn, 6, 1, 10),
-    maxToolAttemptsPerTurn: boundedInteger(input.maxToolAttemptsPerTurn, 8, 1, 15),
+    maxToolAttemptsPerTurn: boundedInteger(input.maxToolAttemptsPerTurn, 15, 1, 15),
   }
 }
 
@@ -213,7 +211,6 @@ export class ReaderTurnManager {
           resources,
           profile,
           authorization: {
-            navigation: authorization.navigate,
             persistentWrite: authorization.saveNote,
           },
         },
@@ -250,7 +247,6 @@ export class ReaderTurnManager {
     const intents = detectTurnIntents(state.userText)
     const requestedTools: ReaderToolName[] = [
       ...CORE_READER_TOOL_NAMES,
-      ...(intents.navigate ? ['reader_open_location' as const] : []),
       ...(intents.saveNote ? ['reader_save_note' as const] : []),
     ]
     const activeToolNames = this.registry.definitions(requestedTools, state.profile, state.host).map(tool => tool.name)

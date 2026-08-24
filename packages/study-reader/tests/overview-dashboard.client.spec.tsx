@@ -27,8 +27,8 @@ describe('OverviewDashboard', () => {
     expect(changed).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the seven preset tools as available when no work plan is selected', async () => {
-    const tools = Array.from({ length: 7 }, (_, index) => ({ name: `study_tool_${index}`, title: `工具 ${index + 1}`, description: '默认文献工具', enabledInCurrentProfile: true }))
+  it('shows the six preset tools as available when no work plan is selected', async () => {
+    const tools = Array.from({ length: 6 }, (_, index) => ({ name: `study_tool_${index}`, title: `工具 ${index + 1}`, description: '默认文献工具', enabledInCurrentProfile: true }))
     const remote = {
       studioSnapshot: vi.fn(async () => ({ ok: true as const, value: { immutableBaseline: { id: 'baseline' }, prompts: [], profiles: [], skills: [], folders: [] } })),
       listToolCatalog: vi.fn(async () => ({ ok: true as const, value: tools })),
@@ -38,7 +38,7 @@ describe('OverviewDashboard', () => {
     render(<OverviewDashboard sessionId="s" studyRemote={remote as never} onNavigate={vi.fn()} onChanged={vi.fn()} />)
     fireEvent.click(await screen.findByRole('button', { name: /Tools/ }))
     expect(await screen.findByText('工具 1')).toBeTruthy()
-    expect(screen.getAllByText('默认可用')).toHaveLength(7)
+    expect(screen.getAllByText('默认可用')).toHaveLength(6)
     expect(screen.queryByText('未启用')).toBeNull()
   })
 

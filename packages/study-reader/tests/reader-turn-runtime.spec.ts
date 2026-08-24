@@ -53,6 +53,10 @@ describe('ReaderTurnManager', () => {
     expect(enabled.allowPersistentWrites).toBe(true)
   })
 
+  it('leaves enough malformed-call headroom for final evidence retrieval', () => {
+    expect(normalizeStudyReaderProfile()).toMatchObject({ maxToolCallsPerTurn: 6, maxToolAttemptsPerTurn: 15 })
+  })
+
   it('keeps all core read tools visible and injects every conversation document without private ids', async () => {
     const current = agent([
       { type: 'turn/start', data: { turn: 1 } },

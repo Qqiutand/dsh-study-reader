@@ -54,7 +54,6 @@ describe('Reader system-prompt assembly', () => {
       { name: 'reader_get_outline', description: 'outline', parameters: { type: 'object' } },
       { name: 'reader_search_passages', description: 'search', parameters: { type: 'object' } },
       { name: 'reader_read_passage', description: 'read', parameters: { type: 'object' } },
-      { name: 'reader_open_location', description: 'open', parameters: { type: 'object' } },
       { name: 'reader_save_note', description: 'save', parameters: { type: 'object' } },
       { name: 'web_search', description: 'web', parameters: { type: 'object' } },
     ] }))

@@ -35,6 +35,11 @@ function searchScope(input: unknown): string | undefined {
   return isPlainObject(input) && isPlainObject(input.scope) ? stableStringify(input.scope) : undefined
 }
 
+const FINALIZATION_RESERVE: Readonly<Partial<Record<ReaderToolName, number>>> = {
+  reader_read_passage: 2,
+  reader_save_note: 1,
+}
+
 export class ToolCallGuard {
   private attempts = 0
   private completedCalls = 0
@@ -52,17 +57,22 @@ export class ToolCallGuard {
     if (!context.profile.allowedTools.has(spec.name)) return toolResult.error('TOOL_NOT_ALLOWED', `当前配置预设不允许调用 ${spec.name}`)
     const missing = spec.requiredCapabilities.find(capability => !context.host.capabilities.has(capability))
     if (missing !== undefined) return toolResult.error('CAPABILITY_UNAVAILABLE', `当前运行时缺少能力：${missing}`)
-    if (spec.effect === 'navigate' && !context.authorization.navigation) return toolResult.error('SIDE_EFFECT_NOT_AUTHORIZED', '用户没有明确要求打开或跳转到文档位置')
     if (spec.effect === 'write' && (!context.authorization.persistentWrite || !context.profile.allowPersistentWrites)) return toolResult.error('SIDE_EFFECT_NOT_AUTHORIZED', '用户没有明确授权持久化写入')
-    const maximum = context.profile.maxToolCallsPerTurn
-    if (this.completedCalls >= maximum) return toolResult.error('CALL_BUDGET_EXCEEDED', '本轮文献工具调用预算已经用尽')
     const current = this.callsByTool.get(spec.name) ?? 0
-    if (current >= maximum) return toolResult.error('CALL_BUDGET_EXCEEDED', `${spec.name} 已达到本轮调用上限`)
     const signature = `${spec.name}:${stableStringify(input)}`
     if (this.signatures.has(signature)) return toolResult.error('DUPLICATE_CALL', '禁止在同一轮中使用完全相同的参数重复调用工具')
     if (spec.name === 'reader_search_passages') {
       const scope = searchScope(input)
       if (scope !== undefined && (this.emptySearchesByScope.get(scope) ?? 0) >= 2) return toolResult.error('SEARCH_STOPPED', '该检索范围已经经历原查询和一次合理改写，必须停止继续检索')
+    }
+    const maximum = context.profile.maxToolCallsPerTurn
+    if (this.completedCalls >= maximum && current >= (FINALIZATION_RESERVE[spec.name] ?? 0)) {
+      const message = spec.name === 'reader_read_passage'
+        ? '本轮已经完成两次正文读取，请使用已返回的正文作答'
+        : spec.name === 'reader_save_note'
+          ? '本轮已经执行一次笔记保存，不再重复写入'
+          : '本轮检索预算已经达到上限；请使用已有目录、检索片段和正文作答，不要继续检索'
+      return toolResult.error('CALL_BUDGET_EXCEEDED', message)
     }
     this.signatures.add(signature); this.completedCalls += 1; this.callsByTool.set(spec.name, current + 1)
     return undefined

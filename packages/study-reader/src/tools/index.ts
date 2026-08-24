@@ -14,6 +14,11 @@ export interface Config {}
 export const Config: z<Config> = z.object({})
 
 type SchemaRecord = Readonly<Record<string, unknown>>
+const SCHEMA_ANNOTATIONS = ['description', 'title', 'default', 'examples'] as const
+
+function schemaAnnotations(input: SchemaRecord): SchemaRecord {
+  return Object.fromEntries(SCHEMA_ANNOTATIONS.flatMap(key => Object.hasOwn(input, key) ? [[key, input[key]]] : []))
+}
 
 function valueSpec(node: unknown, required = false): SchemaRecord {
   const input = node !== null && typeof node === 'object' && !Array.isArray(node)
@@ -37,7 +42,7 @@ function valueSpec(node: unknown, required = false): SchemaRecord {
                 : 'json',
               ...(Array.isArray(input.enum) ? { enum: input.enum } : {}),
             }
-  return { ...base, ...(required ? { required: true } : {}) }
+  return { ...base, ...schemaAnnotations(input), ...(required ? { required: true } : {}) }
 }
 
 function parameterSpec(root: SchemaRecord): Record<string, SchemaRecord> {
@@ -64,7 +69,7 @@ export function apply(ctx: Context): void {
         }
         return await ctx.studyAgent.executeReaderTool(exec.agent, spec.name, args, exec.signal) as unknown as JsonValue
       },
-      presentCall: () => ({ card: 'generic' as const, title: spec.name, kind: spec.effect === 'read' ? 'read' as const : spec.effect === 'write' ? 'edit' as const : 'execute' as const }),
+      presentCall: () => ({ card: 'generic' as const, title: spec.name, kind: spec.effect === 'read' ? 'read' as const : 'edit' as const }),
     }))
   }
 

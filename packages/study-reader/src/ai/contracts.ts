@@ -6,7 +6,6 @@ export const READER_TOOL_NAMES = [
   'reader_get_outline',
   'reader_search_passages',
   'reader_read_passage',
-  'reader_open_location',
   'reader_save_note',
 ] as const
 
@@ -24,9 +23,8 @@ export type ReaderCapability =
   | 'documents.outline'
   | 'passages.search'
   | 'passages.read'
-  | 'navigation.open'
   | 'notes.save'
-export type ReaderToolEffect = 'read' | 'navigate' | 'write'
+export type ReaderToolEffect = 'read' | 'write'
 export type ReaderDocumentFormat = 'pdf' | 'epub' | 'markdown' | 'text' | 'html' | 'other'
 export type ReaderDocumentReadiness = 'ready' | 'loading' | 'indexing' | 'failed' | 'unknown'
 
@@ -102,7 +100,6 @@ export interface ReaderHost {
   getOutline?(args: { readonly principalId: string; readonly documentId: string; readonly maxDepth: number; readonly signal: AbortSignal }): Promise<readonly HostOutlineNode[]>
   searchPassages?(args: { readonly principalId: string; readonly query: string; readonly documentIds?: readonly string[]; readonly limit: number; readonly signal: AbortSignal }): Promise<{ readonly passages: readonly HostPassage[]; readonly truncated: boolean; readonly warnings?: readonly string[] }>
   readPassage?(args: { readonly principalId: string; readonly documentId: string; readonly anchor: HostAnchor; readonly window: number; readonly signal: AbortSignal }): Promise<{ readonly documentId: string; readonly documentTitle: string; readonly documentFormat?: ReaderDocumentFormat; readonly passageId?: string; readonly text: string; readonly location?: HumanLocation; readonly warnings?: readonly string[] }>
-  openLocation?(args: { readonly principalId: string; readonly documentId: string; readonly anchor: HostAnchor; readonly signal: AbortSignal }): Promise<{ readonly confirmed: boolean; readonly documentId: string; readonly location?: HumanLocation; readonly warning?: string }>
   saveNote?(args: { readonly principalId: string; readonly title?: string; readonly content: string; readonly documentId?: string; readonly sourcePassages: readonly { readonly documentId: string; readonly passageId: string }[]; readonly signal: AbortSignal }): Promise<{ readonly accepted: boolean; readonly persisted: boolean; readonly noteId?: string; readonly title?: string; readonly persistedAt?: string; readonly warning?: string }>
 }
 
@@ -152,11 +149,11 @@ export interface StudyReaderProfile {
   readonly allowedTools: ReadonlySet<ReaderToolName>
   readonly allowLibraryWideSearch: boolean
   readonly allowPersistentWrites: boolean
+  /** Shared discovery budget. Final evidence reads and an authorized save have separate reserves. */
   readonly maxToolCallsPerTurn: number
   readonly maxToolAttemptsPerTurn: number
 }
 
 export interface TurnAuthorization {
-  readonly navigation: boolean
   readonly persistentWrite: boolean
 }

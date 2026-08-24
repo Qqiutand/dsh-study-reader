@@ -135,15 +135,14 @@ function sample(type: keyof SessionEventMap): SessionEventMap[keyof SessionEvent
 }
 
 describe('study-reader interface availability', () => {
-  it('projects the authoritative seven-tool catalog through a browser-safe Remote view', async () => {
+  it('projects the authoritative six-tool catalog through a browser-safe Remote view', async () => {
     const { ctx } = await setup()
     const catalog = ctx.study.listToolCatalogForClient({ sessionId: 'catalog-session' })
     expect(catalog.map(tool => tool.name)).toEqual([
       'reader_get_context', 'reader_list_documents', 'reader_get_outline', 'reader_search_passages',
-      'reader_read_passage', 'reader_open_location', 'reader_save_note',
+      'reader_read_passage', 'reader_save_note',
     ])
     expect(catalog.filter(tool => tool.risk === 'read').every(tool => tool.sideEffects === 'none')).toBe(true)
-    expect(catalog.find(tool => tool.name === 'reader_open_location')).toMatchObject({ risk: 'navigate', sideEffects: 'reader-navigation' })
     expect(catalog.find(tool => tool.name === 'reader_save_note')).toMatchObject({ risk: 'write', sideEffects: 'persistent-note-write' })
     expect(catalog.every(tool => /^[a-f0-9]{64}$/u.test(tool.schemaHash))).toBe(true)
     expect(() => JSON.parse(catalog[0]!.parametersJson)).not.toThrow()

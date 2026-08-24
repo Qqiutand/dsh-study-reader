@@ -16,7 +16,6 @@ export interface DetectedTurnIntents {
   readonly assessment: boolean
   readonly organize: boolean
   readonly saveNote: boolean
-  readonly navigate: boolean
 }
 
 export interface StudyReaderSkillManifest {
@@ -26,18 +25,16 @@ export interface StudyReaderSkillManifest {
   readonly activation: SkillActivation
   readonly allowedTools: readonly ReaderToolName[]
   readonly requiredCapabilities?: readonly ReaderCapability[]
-  readonly maxToolCalls: number
-  readonly maxCallsByTool: Partial<Record<ReaderToolName, number>>
 }
 
 export const STUDY_READER_SKILLS: readonly StudyReaderSkillManifest[] = [
-  { id: 'trace-argument', title: '追踪论证', description: '仅在用户要求梳理论证链、前提、推论、隐含假设或结论时使用；普通解释不使用，形式证明优先使用证明重建。', activation: { mode: 'conditional', intent: 'argument' }, allowedTools: ['reader_search_passages', 'reader_read_passage'], maxToolCalls: 4, maxCallsByTool: { reader_search_passages: 2, reader_read_passage: 2 } },
-  { id: 'reconstruct-proof', title: '重建证明', description: '仅在用户明确讨论定理、证明、推导或证明缺口时使用。', activation: { mode: 'conditional', intent: 'proof' }, allowedTools: ['reader_search_passages', 'reader_read_passage'], maxToolCalls: 4, maxCallsByTool: { reader_search_passages: 2, reader_read_passage: 2 } },
-  { id: 'synthesize-sources', title: '跨文档综合', description: '仅在用户明确要求综合多个文档、作者或整个书房时使用。', activation: { mode: 'conditional', intent: 'crossDocument' }, allowedTools: ['reader_list_documents', 'reader_get_outline', 'reader_search_passages', 'reader_read_passage'], requiredCapabilities: ['documents.list', 'passages.search'], maxToolCalls: 7, maxCallsByTool: { reader_list_documents: 1, reader_get_outline: 2, reader_search_passages: 4, reader_read_passage: 3 } },
-  { id: 'generate-practice', title: '生成练习', description: '仅在用户明确要求题目、测验或练习时使用；不得自行启动。', activation: { mode: 'explicit', intent: 'practice' }, allowedTools: ['reader_get_outline', 'reader_search_passages', 'reader_read_passage'], maxToolCalls: 3, maxCallsByTool: { reader_get_outline: 1, reader_search_passages: 1, reader_read_passage: 2 } },
-  { id: 'assess-understanding', title: '评估理解', description: '仅在用户提交答案、复述或明确要求检查理解时使用。', activation: { mode: 'explicit', intent: 'assessment' }, allowedTools: ['reader_search_passages', 'reader_read_passage'], maxToolCalls: 2, maxCallsByTool: { reader_search_passages: 1, reader_read_passage: 1 } },
-  { id: 'organize-study', title: '组织学习', description: '仅在用户明确要求学习提纲、概念依赖、复习顺序或计划时使用。', activation: { mode: 'explicit', intent: 'organize' }, allowedTools: ['reader_get_outline', 'reader_search_passages', 'reader_read_passage'], maxToolCalls: 4, maxCallsByTool: { reader_get_outline: 1, reader_search_passages: 1, reader_read_passage: 2 } },
-  { id: 'save-study-note', title: '保存学习笔记', description: '仅在用户明确要求把内容保存或写入书房笔记时使用；生成草稿不触发写入。', activation: { mode: 'explicit', intent: 'saveNote' }, allowedTools: ['reader_search_passages', 'reader_read_passage', 'reader_save_note'], requiredCapabilities: ['notes.save'], maxToolCalls: 4, maxCallsByTool: { reader_search_passages: 1, reader_read_passage: 2, reader_save_note: 1 } },
+  { id: 'trace-argument', title: '追踪论证', description: '仅在用户要求梳理论证链、前提、推论、隐含假设或结论时使用；普通解释不使用，形式证明优先使用证明重建。', activation: { mode: 'conditional', intent: 'argument' }, allowedTools: ['reader_search_passages', 'reader_read_passage'] },
+  { id: 'reconstruct-proof', title: '重建证明', description: '仅在用户明确讨论定理、证明、推导或证明缺口时使用。', activation: { mode: 'conditional', intent: 'proof' }, allowedTools: ['reader_search_passages', 'reader_read_passage'] },
+  { id: 'synthesize-sources', title: '跨文档综合', description: '仅在用户明确要求综合多个文档、作者或整个书房时使用。', activation: { mode: 'conditional', intent: 'crossDocument' }, allowedTools: ['reader_list_documents', 'reader_get_outline', 'reader_search_passages', 'reader_read_passage'], requiredCapabilities: ['documents.list', 'passages.search'] },
+  { id: 'generate-practice', title: '生成练习', description: '仅在用户明确要求题目、测验或练习时使用；不得自行启动。', activation: { mode: 'explicit', intent: 'practice' }, allowedTools: ['reader_get_outline', 'reader_search_passages', 'reader_read_passage'] },
+  { id: 'assess-understanding', title: '评估理解', description: '仅在用户提交答案、复述或明确要求检查理解时使用。', activation: { mode: 'explicit', intent: 'assessment' }, allowedTools: ['reader_search_passages', 'reader_read_passage'] },
+  { id: 'organize-study', title: '组织学习', description: '仅在用户明确要求学习提纲、概念依赖、复习顺序或计划时使用。', activation: { mode: 'explicit', intent: 'organize' }, allowedTools: ['reader_get_outline', 'reader_search_passages', 'reader_read_passage'] },
+  { id: 'save-study-note', title: '保存学习笔记', description: '仅在用户明确要求把内容保存或写入书房笔记时使用；生成草稿不触发写入。', activation: { mode: 'explicit', intent: 'saveNote' }, allowedTools: ['reader_search_passages', 'reader_read_passage', 'reader_save_note'], requiredCapabilities: ['notes.save'] },
 ]
 
 export function detectTurnIntents(userMessage: string): DetectedTurnIntents {
@@ -50,7 +47,6 @@ export function detectTurnIntents(userMessage: string): DetectedTurnIntents {
     assessment: /检查.{0,12}(?:答案|理解|复述)|批改|评估.{0,12}(?:答案|理解)|我(?:这样|这么)理解.{0,8}(?:对吗|是否正确)|grade\s+my|check\s+my\s+(?:answer|understanding)/i.test(text),
     organize: /学习计划|复习计划|学习顺序|复习顺序|知识结构|概念依赖|概念图|学习提纲|课程安排|study\s+plan|review\s+plan|concept\s+map/i.test(text),
     saveNote: /(?:保存|写入|加入|添加|记录到).{0,16}(?:书房|笔记|学习笔记)|save.{0,12}(?:note|study\s+space)|add.{0,12}note/i.test(text),
-    navigate: /打开.{0,16}(?:位置|页面|文档|章节)|跳转到|定位并打开|带我到|open.{0,12}(?:page|section|location|document)|go\s+to/i.test(text),
   }
 }
 

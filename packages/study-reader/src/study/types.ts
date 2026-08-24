@@ -1009,8 +1009,8 @@ export interface ToolDescriptorView {
   readonly whenToUse: readonly string[]
   readonly whenNotToUse: readonly string[]
   readonly nextActions: readonly string[]
-  readonly risk: 'read' | 'navigate' | 'write'
-  readonly sideEffects: 'none' | 'reader-navigation' | 'persistent-note-write'
+  readonly risk: 'read' | 'write'
+  readonly sideEffects: 'none' | 'persistent-note-write'
   readonly requiredCapabilities: readonly string[]
   readonly sourceResolution: string
   readonly parametersJson: string

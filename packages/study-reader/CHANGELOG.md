@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.6 - 2026-08-24
+
+- The shared discovery budget now reserves two final `reader_read_passage` calls and one explicitly authorized `reader_save_note` call, so directory and search work cannot prevent the assistant from reading or saving the evidence it already found.
+- Search guidance now tells the model to use or read a useful hit before issuing another search; duplicate and stopped-search errors are reported before the broader budget limit, and the malformed-call attempt allowance is raised from 8 to 15.
+- Removed unused per-Skill budget metadata so the centralized runtime guard is the only declared call-budget policy.
+
+## 0.5.5 - 2026-08-24
+
+- Removed the unimplemented `reader_open_location` Tool and its navigation capability, authorization path, catalog entry, and preset promises. The authoritative catalog now contains five read-only evidence Tools plus the explicitly authorized `reader_save_note` Tool.
+
+## 0.5.4 - 2026-08-24
+
+- Audited all seven Reader Tools and added model-visible selector examples, allowed target kinds, numeric/cardinality limits, and exact save-note requirements where Harness's compact Tool Schema cannot encode those bounds directly.
+- `reader_save_note` now reports a path-specific validation error for an invalid evidence-reference list instead of a generic parse failure.
+
+## 0.5.3 - 2026-08-24
+
+- `reader_search_passages.scope` now accepts a direct `document_ref` or `document_title` for a single-document search, while preserving the existing multi-document and conversation-wide forms.
+- Native DSH Tool registration now preserves parameter descriptions, examples, defaults, and titles, and the search/read descriptions show exact argument shapes while making clear that JSON key order is irrelevant.
+
 ## 0.5.2 - 2026-08-24
 
 - Corrected the `reading` preset description to advertise only currently reachable Reader Tools and bundled Skills.
