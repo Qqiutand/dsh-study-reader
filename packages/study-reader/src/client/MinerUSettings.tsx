@@ -1,7 +1,7 @@
 /** MinerU connection profiles and credential settings. */
 
 import { useCallback, useEffect, useState } from 'react'
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { CredentialInfo, RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ProviderConnectionView } from '../study/types.ts'
 import type { ProviderConnectionTestResult } from '../studio/types.ts'
 import type { StudyRemote } from './remote.ts'
@@ -13,7 +13,10 @@ const OFFICIAL_ENDPOINT = 'https://mineru.net'
 const LOCAL_ENDPOINT = 'http://127.0.0.1:8000'
 
 export interface MinerUSettingsProps {
-  readonly credentials: IApiClient['credentials'] | undefined
+  readonly credentials: {
+    readonly describe: (refs: string[]) => Promise<RemoteResult<Record<string, CredentialInfo>>>
+    readonly set: (ref: string, value: string) => Promise<RemoteResult<void>>
+  } | undefined
   readonly studyRemote?: StudyRemote
   readonly sessionId?: string
 }
@@ -79,9 +82,9 @@ export function MinerUSettings({ credentials, studyRemote, sessionId }: MinerUSe
         return
       }
       try {
-        const response = await credentials.describe({ refs: [MINERU_API_KEY] })
-        if (!response.result.ok) { setCredential({ phase: 'failed', message: response.result.error.message }); return }
-        const view = response.result.value.credentials[MINERU_API_KEY]
+        const response = await credentials.describe([MINERU_API_KEY])
+        if (!response.ok) { setCredential({ phase: 'failed', message: response.error.message }); return }
+        const view = response.value[MINERU_API_KEY]
         setCredential({ phase: 'ready', configured: view?.configured === true, writable: view?.writable !== false, ...(view?.source === undefined ? {} : { source: view.source }) })
       } catch (error) {
         setCredential({ phase: 'failed', message: error instanceof Error ? error.message : b('无法连接到凭据服务', 'Cannot connect to the credential service') })
@@ -115,8 +118,8 @@ export function MinerUSettings({ credentials, studyRemote, sessionId }: MinerUSe
     setKeyBusy(true); setKeyError(undefined)
     try {
       if (credentials === undefined) throw new Error(b('当前 DSH 未提供凭据管理接口。', 'This DSH host does not expose credential management.'))
-      const response = await credentials.set({ ref: MINERU_API_KEY, value })
-      if (!response.result.ok) throw new Error(response.result.error.message)
+      const response = await credentials.set(MINERU_API_KEY, value)
+      if (!response.ok) throw new Error(response.error.message)
       setKeyDraft('')
       await refresh()
     } catch (error) { setKeyError(error instanceof Error ? error.message : b('保存密钥失败。', 'Failed to save the key.')) } finally { setKeyBusy(false) }

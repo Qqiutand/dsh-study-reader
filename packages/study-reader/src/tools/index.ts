@@ -1,7 +1,7 @@
 /** DSH-native registrations for the six least-authority Reader tools. */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool, type PreToolDecision } from '@deepseek-ai/dsh-tools'
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import z from '@deepseek-ai/schemastery'
 import { READER_TOOL_NAMES } from '../ai/contracts.ts'
 import { createReaderToolSpecs } from '../ai/reader-tools.ts'

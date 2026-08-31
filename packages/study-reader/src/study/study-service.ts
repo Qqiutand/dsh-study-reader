@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentRegistry } from '@deepseek-ai/dsh-agent'
-import { freezeMessage, MessageId, type CallId } from '@deepseek-ai/dsh-llm'
+import { freezeMessage, MessageId, type ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SkillCandidate, SkillDefinition, SkillRegistry, SkillSummary, SkillViewOptions } from '@deepseek-ai/dsh-skill'
 import { PDFDocument } from 'pdf-lib'
@@ -376,7 +376,7 @@ export interface CognitiveContextRequest {
   readonly blockIds: readonly string[]
   readonly selectedText: string
   readonly mode: 'feynman' | 'toulmin' | 'socratic'
-  readonly toolCallId: CallId
+  readonly toolCallId: ToolCallId
 }
 
 /** Validated context pack and one-use proof that it belongs to the current Agent turn. */
@@ -3309,7 +3309,7 @@ export class StudyService extends TypertRemoteService {
    */
   async completeCognitiveProbeForCurrentInitiator(
     submission: CognitiveProbeSubmission,
-    toolCallId: CallId,
+    toolCallId: ToolCallId,
   ): Promise<{ readonly eventSeq: number; readonly provider: string; readonly model: string }> {
     const agent = this.deps.agents.requireInitiator()
     const sessionId = String(agent.id)
@@ -3831,7 +3831,7 @@ export class StudyService extends TypertRemoteService {
   }
 
   /** Resolve the durable turn that owns a tool call. */
-  private toolTurn(events: readonly import('@deepseek-ai/dsh-session').SessionEvent[], callId: CallId): number {
+  private toolTurn(events: readonly import('@deepseek-ai/dsh-session').SessionEvent[], callId: ToolCallId): number {
     const event = events.findLast(candidate => candidate.type === 'tool/call' && candidate.data.callId === callId)
     if (event?.type !== 'tool/call') {
       throw new StudyError(`tool call "${callId}" is not present in the initiating session`, 'COGNITIVE_RECEIPT_INVALID')

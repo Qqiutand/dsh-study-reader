@@ -1,7 +1,7 @@
 {
   "name": "dsh-study-reader",
   "description": "Document library, bounded preview, and evidence tools for DeepSeek Harness",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "private": true,
   "type": "module",
   "main": "lib/types/index.js",
@@ -92,7 +92,8 @@
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-api-session-controller",
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-tool"
       ],
@@ -107,8 +108,9 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.0",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.0",
     "@deepseek-ai/dsh-brand": "^0.1.0",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.0",
     "@deepseek-ai/dsh-client-locale": "^0.1.0",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0",
     "@deepseek-ai/dsh-client-ui-tool": "^0.1.0",
@@ -120,6 +122,7 @@
     "@deepseek-ai/dsh-system-prompt": "^0.1.0",
     "@deepseek-ai/dsh-tools": "^0.1.0",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.5",
+    "@deepseek-ai/dsh-util-values": "^0.1.0",
     "@deepseek-ai/schemastery": "^2.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
@@ -140,8 +143,8 @@
     "@deepseek-ai/cordis-plugin-timer": "link:../../../vendor/timer",
     "@deepseek-ai/dsh-agent": "link:../../../packages/core/agent",
     "@deepseek-ai/dsh-api-remotes": "link:../../../packages/api/remotes",
+    "@deepseek-ai/dsh-api-session-controller": "link:../../../packages/api/session-controller",
     "@deepseek-ai/dsh-brand": "link:../../../packages/util/brand",
-    "@deepseek-ai/dsh-client-runtime": "link:../../../packages/client/runtime",
     "@deepseek-ai/dsh-client-locale": "link:../../../packages/client/locale",
     "@deepseek-ai/dsh-client-ui-primitives": "link:../../../packages/client/ui-primitives",
     "@deepseek-ai/dsh-client-ui-tool": "link:../../../packages/client/ui-tool",
@@ -158,6 +161,7 @@
     "@deepseek-ai/dsh-system-prompt": "link:../../../packages/core/system-prompt",
     "@deepseek-ai/dsh-tools": "link:../../../packages/core/tools",
     "@deepseek-ai/dsh-typert-generator": "link:../../../packages/typert/generator",
+    "@deepseek-ai/dsh-util-values": "link:../../../packages/util/values",
     "@deepseek-ai/schemastery": "link:../../../vendor/schemastery",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^24.0.0",

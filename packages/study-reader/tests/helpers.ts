@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { Service } from '@deepseek-ai/cordis'
-import type { CallId, UserMessage } from '@deepseek-ai/dsh-llm'
+import type { ToolCallId, UserMessage } from '@deepseek-ai/dsh-llm'
 import TimerService from '@deepseek-ai/cordis-plugin-timer'
 import { CredentialProvider, type CredentialInfo, type CredentialRef, type ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import * as ExtractionModule from '../lib/types/extraction/index.js'
@@ -104,7 +104,7 @@ export class TestAgents extends Service {
   }
 
   /** Record the tool call used to bind a cognitive context receipt to one turn. */
-  recordToolCall(id: string, callId: CallId, turn: number): void {
+  recordToolCall(id: string, callId: ToolCallId, turn: number): void {
     const events = this.sessionEvents.get(id) ?? []
     events.push({ type: 'tool/call', data: { callId, turn } })
     this.sessionEvents.set(id, events)

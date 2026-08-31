@@ -35,7 +35,7 @@ import { synthesizeDossier } from '../lib/types/domain/dossier.js'
 import { STUDY_EVENT_TYPES, isStudyEventType } from '../lib/types/protocol/events.js'
 import type { StudyBlock, StudyEventRecord, SourceId, RevisionId } from '../lib/types/study/index.js'
 import { FrictionId } from '../lib/types/protocol/ids.js'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 
 const harnesses: StudyHarness[] = []
 
@@ -591,8 +591,8 @@ describe('study-reader interface availability', () => {
       text: expect.stringContaining('study_submit_cognitive_probe'),
     })
 
-    const analyzeCallId = CallId('analyze-1')
-    const submitCallId = CallId('submit-1')
+    const analyzeCallId = ToolCallId('analyze-1')
+    const submitCallId = ToolCallId('submit-1')
     harness.agents.recordToolCall('s1', analyzeCallId, 1)
     const prepared = await harness.agents.runAs('s1', async () =>
       await harness.ctx.study.prepareCognitiveContextForCurrentInitiator({
@@ -644,7 +644,7 @@ describe('study-reader interface availability', () => {
         hint: '',
         synthesis: '',
         citations: [],
-      }, CallId('retry-call')))
+      }, ToolCallId('retry-call')))
     expect(retried).toEqual(completed)
     const event = durableEvents(harness, 's1').at(-1)!
     expect(event.type).toBe('study/cognitive-probe-generated')

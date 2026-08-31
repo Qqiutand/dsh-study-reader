@@ -24,6 +24,8 @@ describe('one-command DSH installer', () => {
     const source = readFileSync(installer, 'utf8')
 
     expect(source).toContain("join(dshHome, '.plugin-packages', sourceManifest.name)")
+    expect(source).toContain("createHash('sha256').update(readFileSync(tarball))")
+    expect(source).toContain('`-${tarballDigest}.tgz`')
     expect(source).toContain('copyFileSync(tarball, cachedTarball)')
     expect(source).toContain('`${sourceManifest.name}@file:${cachedTarball}`')
     expect(source).toContain("'add', '--ignore-scripts', packageSpec")

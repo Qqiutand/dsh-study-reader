@@ -2,6 +2,7 @@
 /** Build and install Study Reader plus its reading preset in one explicit command. */
 
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
@@ -102,9 +103,12 @@ if (!existsSync(tarball)) throw new Error(`distribution tarball was not created:
 
 // Keep the installed file dependency inside DSH_HOME. A source checkout may
 // later rebuild or remove dist/, but unrelated profile operations must still
-// be able to resolve every dependency already recorded by pnpm.
+// be able to resolve every dependency already recorded by pnpm. The content
+// digest also changes the file: spec when a development build is rebuilt at
+// the same package version, so pnpm cannot silently reuse an older tarball.
 const packageCache = join(dshHome, '.plugin-packages', sourceManifest.name)
-const cachedTarball = join(packageCache, tarballName)
+const tarballDigest = createHash('sha256').update(readFileSync(tarball)).digest('hex').slice(0, 12)
+const cachedTarball = join(packageCache, tarballName.replace(/\.tgz$/, `-${tarballDigest}.tgz`))
 mkdirSync(packageCache, { recursive: true, mode: 0o700 })
 copyFileSync(tarball, cachedTarball)
 

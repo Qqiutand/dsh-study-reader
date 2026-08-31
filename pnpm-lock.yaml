@@ -90,15 +90,15 @@ importers:
       '@deepseek-ai/dsh-api-remotes':
         specifier: link:../../../packages/api/remotes
         version: link:../../../packages/api/remotes
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: link:../../../packages/api/session-controller
+        version: link:../../../packages/api/session-controller
       '@deepseek-ai/dsh-brand':
         specifier: link:../../../packages/util/brand
         version: link:../../../packages/util/brand
       '@deepseek-ai/dsh-client-locale':
         specifier: link:../../../packages/client/locale
         version: link:../../../packages/client/locale
-      '@deepseek-ai/dsh-client-runtime':
-        specifier: link:../../../packages/client/runtime
-        version: link:../../../packages/client/runtime
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: link:../../../packages/client/ui-primitives
         version: link:../../../packages/client/ui-primitives
@@ -144,6 +144,9 @@ importers:
       '@deepseek-ai/dsh-typert-generator':
         specifier: link:../../../packages/typert/generator
         version: link:../../../packages/typert/generator
+      '@deepseek-ai/dsh-util-values':
+        specifier: link:../../../packages/util/values
+        version: link:../../../packages/util/values
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery

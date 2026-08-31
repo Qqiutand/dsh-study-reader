@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.7 - 2026-08-31
+
+- Migrated the removed Client Runtime/API wrapper, Session projection, Tool-call ID, and shared JSON contracts to their DSH 0.1.2-alpha.2 owners.
+- Made the one-command installer content-address its cached tarball so rebuilding the same version cannot leave an older bundle installed.
+
 ## 0.5.6 - 2026-08-24
 
 - The shared discovery budget now reserves two final `reader_read_passage` calls and one explicitly authorized `reader_save_note` call, so directory and search work cannot prevent the assistant from reading or saving the evidence it already found.

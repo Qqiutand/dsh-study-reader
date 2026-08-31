@@ -12,7 +12,8 @@ const PLATFORM_MODULES = [
   '@deepseek-ai/dsh-client-ui-primitives',
   '@deepseek-ai/dsh-client-ui-attachment',
   '@deepseek-ai/dsh-client-schema-form',
-  '@deepseek-ai/dsh-client-runtime/client',
+  '@deepseek-ai/dsh-api-remotes/client',
+  '@deepseek-ai/dsh-api-session-controller/client',
 ]
 
 const ID = 'dsh-study-reader'

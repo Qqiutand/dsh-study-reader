@@ -16,14 +16,14 @@ const localConnection = {
 
 describe('MinerUSettings', () => {
   it('uses the injected credentials face directly and renders local Docker controls', async () => {
-    const describe = vi.fn(async () => ({ result: { ok: true, value: { credentials: { MINERU_API_KEY: { configured: false, writable: true } } } } }))
+    const describe = vi.fn(async () => ({ ok: true, value: { MINERU_API_KEY: { configured: false, writable: true } } }))
     const listProviderConnections = vi.fn(async () => ({ ok: true, value: [localConnection] }))
 
     render(<MinerUSettings credentials={{ describe, set: vi.fn(), unset: vi.fn() } as never} studyRemote={{ listProviderConnections } as never} sessionId="session-one" />)
 
     await screen.findByRole('option', { name: '本地 Docker（mineru-api）' })
     expect(screen.getByText('正在使用')).toBeTruthy()
-    expect(describe).toHaveBeenCalledWith({ refs: ['MINERU_API_KEY'] })
+    expect(describe).toHaveBeenCalledWith(['MINERU_API_KEY'])
     expect(listProviderConnections).toHaveBeenCalledWith({ sessionId: 'session-one' })
   })
 

@@ -6,7 +6,8 @@
  */
 
 import { createRoot, type Root } from 'react-dom/client'
-import type { ISessions, SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions, SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { StudioShell } from './studio/StudioShell.tsx'
 import { ClientErrorBoundary } from './ClientErrorBoundary.tsx'
 import { StudyLocaleProvider, useStudyLocale, type StudyLocaleFace } from './StudyLocale.tsx'
@@ -32,7 +33,7 @@ export interface StudyActivation {
 
 /** Dependencies retained by the Study root controller. */
 export interface StudyRootDependencies {
-  readonly sessions: Pick<ISessions, 'list' | 'currentProvideInfo'>
+  readonly sessions: Pick<ISessions, 'list'>
   readonly studyRemote: StudyRemote | undefined
   readonly agentPresetsApi?: AgentPresetReader
   readonly credentialsApi?: MinerUSettingsProps['credentials']
@@ -42,11 +43,10 @@ export interface StudyRootDependencies {
 
 /** Minimal Host API face used to inspect a copied preset's composition. */
 export interface AgentPresetReader {
-  readonly read: (request: { readonly agentPreset: string }) => Promise<{
-    readonly result:
-      | { readonly ok: true; readonly value: { readonly content: string } }
-      | { readonly ok: false }
-  }>
+  readonly read: (agentPreset: string) => Promise<
+    | { readonly ok: true; readonly value: { readonly content: string } }
+    | { readonly ok: false }
+  >
 }
 
 interface MountedStudyRoot extends StudyActivation {
@@ -60,7 +60,8 @@ interface MountedStudyRoot extends StudyActivation {
 function resolvePresetActivation(snapshot: SessionListState, current = snapshot.current): StudyActivation | undefined {
   if (current === undefined) return undefined
   const summary = snapshot.byId[current]
-  const preset = summary?.agentPreset
+  const projectedPreset = summary?.projectionValues?.agentPreset
+  const preset = typeof projectedPreset === 'string' ? projectedPreset : undefined
   if (summary === undefined || preset === undefined) return undefined
   return { sessionId: current, preset, blank: summary.blank }
 }
@@ -126,7 +127,6 @@ export class StudyRootController {
   private readonly presetChecks = new Map<string, Promise<boolean>>()
   private mounted: MountedStudyRoot | undefined
   private unsubscribeList: (() => void) | undefined
-  private unsubscribeCurrent: (() => void) | undefined
   private started = false
   private synchronizeRevision = 0
 
@@ -140,7 +140,6 @@ export class StudyRootController {
     this.started = true
     this.synchronizeCurrent()
     this.unsubscribeList = this.deps.sessions.list.subscribe(() => { this.synchronizeCurrent() })
-    this.unsubscribeCurrent = this.deps.sessions.currentProvideInfo.subscribe(() => { this.synchronizeCurrent() })
     return () => { this.dispose() }
   }
 
@@ -149,25 +148,22 @@ export class StudyRootController {
     this.started = false
     this.unsubscribeList?.()
     this.unsubscribeList = undefined
-    this.unsubscribeCurrent?.()
-    this.unsubscribeCurrent = undefined
     this.deactivate()
   }
 
   private synchronizeCurrent(): void {
     const revision = this.synchronizeRevision + 1
     this.synchronizeRevision = revision
-    const current = this.deps.sessions.currentProvideInfo.getSnapshot().sessionId
     const snapshot = this.deps.sessions.list.getSnapshot()
-    const activation = resolveStudyActivation(snapshot, current, this.studyPresets)
+    const activation = resolveStudyActivation(snapshot, snapshot.current, this.studyPresets)
     if (activation === undefined) {
       this.deactivate()
-      const candidate = resolvePresetActivation(snapshot, current)
+      const candidate = resolvePresetActivation(snapshot, snapshot.current)
       if (candidate !== undefined && !this.nonStudyPresets.has(candidate.preset)) {
         void this.checkPreset(candidate.preset).then(capable => {
           if (!this.started || !capable || revision !== this.synchronizeRevision) return
-          const latestCurrent = this.deps.sessions.currentProvideInfo.getSnapshot().sessionId
-          const latest = resolvePresetActivation(this.deps.sessions.list.getSnapshot(), latestCurrent)
+          const latestSnapshot = this.deps.sessions.list.getSnapshot()
+          const latest = resolvePresetActivation(latestSnapshot, latestSnapshot.current)
           if (latest?.sessionId === candidate.sessionId && latest.preset === candidate.preset) this.present(latest)
         })
       }
@@ -197,8 +193,8 @@ export class StudyRootController {
     if (this.nonStudyPresets.has(preset) || this.deps.agentPresetsApi === undefined) return Promise.resolve(false)
     const existing = this.presetChecks.get(preset)
     if (existing !== undefined) return existing
-    const pending = this.deps.agentPresetsApi.read({ agentPreset: preset })
-      .then(response => response.result.ok && compositionProvidesStudyReaderTools(response.result.value.content))
+    const pending = this.deps.agentPresetsApi.read(preset)
+      .then(response => response.ok && compositionProvidesStudyReaderTools(response.value.content))
       .catch(() => false)
       .then(capable => {
         if (capable) this.studyPresets.add(preset)

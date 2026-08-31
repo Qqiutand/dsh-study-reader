@@ -2,7 +2,8 @@
 
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ISessions, SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions, SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   compositionProvidesStudyReaderTools,
   StudyRootController,
@@ -45,17 +46,13 @@ function sessionId(value: string): SessionId {
 function listFor(id: SessionId | undefined, preset = 'reading', blank = true): SessionListState {
   return {
     current: id,
-    byId: id === undefined ? {} : { [id]: { agentPreset: preset, blank } },
+    byId: id === undefined ? {} : { [id]: { projectionValues: { agentPreset: preset }, blank } },
   } as unknown as SessionListState
 }
 
 function controllerFor(initial: SessionListState, agentPresetsApi?: AgentPresetReader) {
   const list = new Snapshot(initial)
-  const currentProvideInfo = {
-    getSnapshot: () => ({ sessionId: list.getSnapshot().current, hooks: {}, props: {} }),
-    subscribe: (listener: () => void) => list.subscribe(listener),
-  }
-  const sessions = { list, currentProvideInfo } as Pick<ISessions, 'list' | 'currentProvideInfo'>
+  const sessions = { list } as Pick<ISessions, 'list'>
   const controller = new StudyRootController({
     sessions,
     studyRemote: undefined,
@@ -100,8 +97,7 @@ describe('StudyRootController', () => {
 
   it('renders the complete shell from the active Host English locale', () => {
     const list = new Snapshot(listFor(sessionId('reading-en')))
-    const currentProvideInfo = { getSnapshot: () => ({ sessionId: list.getSnapshot().current, hooks: {}, props: {} }), subscribe: (listener: () => void) => list.subscribe(listener) }
-    const controller = new StudyRootController({ sessions: { list, currentProvideInfo } as unknown as Pick<ISessions, 'list' | 'currentProvideInfo'>, studyRemote: undefined, document, locale: testLocale('en') })
+    const controller = new StudyRootController({ sessions: { list } as Pick<ISessions, 'list'>, studyRemote: undefined, document, locale: testLocale('en') })
     let dispose!: () => void
     act(() => { dispose = controller.start() })
     expect(screen.getByRole('button', { name: 'Chat' })).toBeTruthy()
@@ -134,17 +130,15 @@ describe('StudyRootController', () => {
 
   it('mounts the Bookroom for a copied preset that still composes the Reader Tool', async () => {
     const read = vi.fn(async () => ({
-      result: {
-        ok: true as const,
-        value: { content: "- id: tool-study\n  name: 'dsh-study-reader/tools'\n" },
-      },
+      ok: true as const,
+      value: { content: "- id: tool-study\n  name: 'dsh-study-reader/tools'\n" },
     }))
     const { controller } = controllerFor(listFor(sessionId('copied-session'), 'my-reading-copy'), { read })
     let dispose!: () => void
     act(() => { dispose = controller.start() })
 
     await waitFor(() => expect(document.body.querySelector('[data-dsh-study-root]')).not.toBeNull())
-    expect(read).toHaveBeenCalledWith({ agentPreset: 'my-reading-copy' })
+    expect(read).toHaveBeenCalledWith('my-reading-copy')
     expect(document.body.querySelector('[data-dsh-study-root]')?.getAttribute('data-preset')).toBe('my-reading-copy')
 
     act(() => { dispose() })
@@ -152,16 +146,14 @@ describe('StudyRootController', () => {
 
   it('keeps an unrelated custom preset outside the Bookroom', async () => {
     const read = vi.fn(async () => ({
-      result: {
-        ok: true as const,
-        value: { content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n" },
-      },
+      ok: true as const,
+      value: { content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n" },
     }))
     const { controller } = controllerFor(listFor(sessionId('coding-session'), 'my-coding-copy'), { read })
     let dispose!: () => void
     act(() => { dispose = controller.start() })
 
-    await waitFor(() => expect(read).toHaveBeenCalledWith({ agentPreset: 'my-coding-copy' }))
+    await waitFor(() => expect(read).toHaveBeenCalledWith('my-coding-copy'))
     expect(document.body.querySelector('[data-dsh-study-root]')).toBeNull()
 
     act(() => { dispose() })
@@ -170,21 +162,21 @@ describe('StudyRootController', () => {
   it('does not mount a late copied-preset result after the current Session changes', async () => {
     let resolveCopied!: (value: Awaited<ReturnType<AgentPresetReader['read']>>) => void
     const copied = new Promise<Awaited<ReturnType<AgentPresetReader['read']>>>(resolve => { resolveCopied = resolve })
-    const read = vi.fn((request: { readonly agentPreset: string }) => request.agentPreset === 'my-reading-copy'
+    const read = vi.fn((agentPreset: string) => agentPreset === 'my-reading-copy'
       ? copied
-      : Promise.resolve({ result: { ok: true as const, value: { content: '- id: other\n  name: cordis:group\n' } } }))
+      : Promise.resolve({ ok: true as const, value: { content: '- id: other\n  name: cordis:group\n' } }))
     const current = sessionId('copied-race')
     const { controller, list } = controllerFor(listFor(current, 'my-reading-copy'), { read })
     let dispose!: () => void
     act(() => { dispose = controller.start() })
     act(() => { list.publish(listFor(sessionId('standard-after-copy'), 'standard')) })
     await act(async () => {
-      resolveCopied({ result: { ok: true, value: { content: "- id: tool-study\n  name: 'dsh-study-reader/tools'\n" } } })
+      resolveCopied({ ok: true, value: { content: "- id: tool-study\n  name: 'dsh-study-reader/tools'\n" } })
       await copied
     })
 
     expect(document.body.querySelector('[data-dsh-study-root]')).toBeNull()
-    expect(read).toHaveBeenCalledWith({ agentPreset: 'standard' })
+    expect(read).toHaveBeenCalledWith('standard')
 
     act(() => { dispose() })
   })
@@ -243,29 +235,28 @@ describe('StudyRootController', () => {
     act(() => { dispose() })
   })
 
-  it('follows the Host current-session projection and ignores a late list current value', () => {
+  it('follows the current Session carried by the list snapshot', () => {
     const first = sessionId('host-session-a')
     const second = sessionId('host-session-b')
     const list = new Snapshot({
       current: first,
       byId: {
-        [first]: { agentPreset: 'reading', blank: true },
-        [second]: { agentPreset: 'reading', blank: true },
+        [first]: { projectionValues: { agentPreset: 'reading' }, blank: true },
+        [second]: { projectionValues: { agentPreset: 'reading' }, blank: true },
       },
     } as unknown as SessionListState)
-    const currentProvideInfo = new Snapshot({ sessionId: first, hooks: {}, props: {} })
     const controller = new StudyRootController({
-      sessions: { list, currentProvideInfo } as Pick<ISessions, 'list' | 'currentProvideInfo'>,
+      sessions: { list } as Pick<ISessions, 'list'>,
       studyRemote: undefined,
       document,
       locale: testLocale(),
     })
     let dispose!: () => void
     act(() => { dispose = controller.start() })
-    act(() => { currentProvideInfo.publish({ sessionId: second, hooks: {}, props: {} }) })
+    act(() => { list.publish({ ...list.getSnapshot(), current: second }) })
     expect(document.body.querySelector('[data-dsh-study-root]')?.getAttribute('data-session-id')).toBe('host-session-b')
     act(() => { list.publish({ ...list.getSnapshot(), current: first }) })
-    expect(document.body.querySelector('[data-dsh-study-root]')?.getAttribute('data-session-id')).toBe('host-session-b')
+    expect(document.body.querySelector('[data-dsh-study-root]')?.getAttribute('data-session-id')).toBe('host-session-a')
     act(() => { dispose() })
   })
 
@@ -318,7 +309,7 @@ describe('StudyRootController', () => {
     const { controller, list } = controllerFor(listFor(sessionId('reading-exit')))
     let dispose!: () => void
     act(() => { dispose = controller.start() })
-    expect(list.listenerCount()).toBe(2)
+    expect(list.listenerCount()).toBe(1)
 
     act(() => { list.publish(listFor(sessionId('standard'), 'standard')) })
     expect(document.body.querySelector('[data-dsh-study-root]')).toBeNull()
