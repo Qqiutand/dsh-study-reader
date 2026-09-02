@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.8 - 2026-09-02
+
+- Added `/reader-unbounded <task>` for a single complex Reader task without per-turn tool-call or attempt-count limits; the next ordinary message automatically returns to the configured bounded policy.
+- The command adds short turn-local runtime guidance so the model knows the count limit is lifted while document grants, explicit write authorization, per-call timeouts, and exact duplicate-call protection remain active.
+
 ## 0.5.7 - 2026-08-31
 
 - Migrated the removed Client Runtime/API wrapper, Session projection, Tool-call ID, and shared JSON contracts to their DSH 0.1.2-alpha.2 owners.

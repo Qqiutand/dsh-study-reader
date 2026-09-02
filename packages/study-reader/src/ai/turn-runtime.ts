@@ -9,6 +9,7 @@ import {
   type StudyReaderProfile,
 } from './contracts.ts'
 import { buildLibraryContextAddon } from './library-context.ts'
+import { isReaderUnboundedUserMessage, READER_UNBOUNDED_CONTEXT_ADDON } from './reader-unbounded.ts'
 import { createReaderToolSpecs } from './reader-tools.ts'
 import { TurnResourceMap } from './resource-map.ts'
 import {
@@ -47,6 +48,7 @@ export function normalizeStudyReaderProfile(input: SerializedStudyReaderProfile 
     allowedTools,
     allowLibraryWideSearch: input.allowLibraryWideSearch ?? true,
     allowPersistentWrites: input.allowPersistentWrites ?? false,
+    toolCallLimit: 'bounded',
     maxToolCallsPerTurn: boundedInteger(input.maxToolCallsPerTurn, 6, 1, 10),
     maxToolAttemptsPerTurn: boundedInteger(input.maxToolAttemptsPerTurn, 15, 1, 15),
   }
@@ -94,6 +96,10 @@ function directUserText(events: readonly SessionLikeEvent[]): string {
     const source = plainRecord(plainRecord(event.data)?.source)
     return source?.kind === 'user' ? [messageText(event.data)] : []
   }).filter(Boolean).join('\n')
+}
+
+function hasReaderUnboundedRequest(events: readonly SessionLikeEvent[]): boolean {
+  return events.some(event => event.type === 'user/message' && isReaderUnboundedUserMessage(event.data))
 }
 
 function explicitSkillNames(events: readonly SessionLikeEvent[]): string[] {
@@ -148,6 +154,7 @@ interface ReaderTurnState {
 
 export interface ReaderTurnView {
   readonly contextAddon: string
+  readonly toolCallLimit: StudyReaderProfile['toolCallLimit']
   readonly activeSkillId?: StudyReaderSkillId
   readonly activeToolNames: readonly ReaderToolName[]
 }
@@ -187,10 +194,15 @@ export class ReaderTurnManager {
     return skillAllowedForTurn(manifest, intents, state.host, state.profile) ? requested : undefined
   }
 
-  private async createState(agent: Agent, turn: number, userText: string, signal?: AbortSignal): Promise<ReaderTurnState> {
+  private async createState(agent: Agent, turn: number, events: readonly SessionLikeEvent[], signal?: AbortSignal): Promise<ReaderTurnState> {
     const principalId = String(agent.id)
     const host = this.dependencies.createHost(principalId)
-    const profile = normalizeStudyReaderProfile(await this.dependencies.resolveProfile(principalId))
+    const configuredProfile = normalizeStudyReaderProfile(await this.dependencies.resolveProfile(principalId))
+    const unbounded = hasReaderUnboundedRequest(events)
+    const profile: StudyReaderProfile = unbounded
+      ? { ...configuredProfile, toolCallLimit: 'unbounded' }
+      : configuredProfile
+    const userText = directUserText(events)
     const controller = new AbortController()
     const abort = (): void => controller.abort()
     if (signal?.aborted) controller.abort()
@@ -221,7 +233,10 @@ export class ReaderTurnManager {
         userText,
         host,
         profile,
-        contextAddon: buildLibraryContextAddon(snapshot.library),
+        contextAddon: [
+          buildLibraryContextAddon(snapshot.library),
+          ...(unbounded ? [READER_UNBOUNDED_CONTEXT_ADDON] : []),
+        ].join('\n\n'),
         dispatcher,
       }
       return state
@@ -235,7 +250,7 @@ export class ReaderTurnManager {
     if (slice === undefined) throw new Error('Reader runtime requires an open DSH turn')
     const existing = this.states.get(agent)
     if (existing !== undefined && this.stateTurns.get(agent) === slice.turn) return existing
-    const created = this.createState(agent, slice.turn, directUserText(slice.events), signal)
+    const created = this.createState(agent, slice.turn, slice.events, signal)
     this.states.set(agent, created)
     this.stateTurns.set(agent, slice.turn)
     return created
@@ -252,6 +267,7 @@ export class ReaderTurnManager {
     const activeToolNames = this.registry.definitions(requestedTools, state.profile, state.host).map(tool => tool.name)
     return {
       contextAddon: state.contextAddon,
+      toolCallLimit: state.profile.toolCallLimit,
       ...(activeSkillId === undefined ? {} : { activeSkillId }),
       activeToolNames,
     }

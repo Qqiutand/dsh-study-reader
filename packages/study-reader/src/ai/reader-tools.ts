@@ -119,7 +119,7 @@ function parseScope(value: unknown): SearchScope {
 }
 const searchPassages: ReaderToolSpec<SearchInput, unknown> = {
   name: 'reader_search_passages', effect: 'read', requiredCapabilities: ['passages.search'], timeoutMs: 15_000,
-  description: '在指定文献或全部本次对话文献中检索相关段落。scope 单篇直接传 {"kind":"document_ref","documentRef":"doc_1"}；多篇传 {"kind":"documents","documents":[...]}；全部传 {"kind":"conversation"}。JSON 字段顺序无关。有可用命中时先使用片段，或用 reader_read_passage 读取 passageRef，再考虑其他检索；空结果最多允许一次语义不变的合理改写，然后停止。',
+  description: '在指定文献或全部本次对话文献中检索相关段落。scope 单篇直接传 {"kind":"document_ref","documentRef":"doc_1"}；多篇传 {"kind":"documents","documents":[...]}；全部传 {"kind":"conversation"}。JSON 字段顺序无关。有可用命中时先使用片段，或用 reader_read_passage 读取 passageRef，再考虑其他检索；空结果只做仍服务于任务且有实质差异的改写，并遵守本轮运行时给出的调用限制。',
   inputSchema: { type: 'object', additionalProperties: false, required: ['query', 'scope'], properties: {
     query: { type: 'string', minLength: 1, maxLength: 500, description: '要在声明范围内检索的短语或问题。' },
     scope: {

@@ -149,6 +149,8 @@ export interface StudyReaderProfile {
   readonly allowedTools: ReadonlySet<ReaderToolName>
   readonly allowLibraryWideSearch: boolean
   readonly allowPersistentWrites: boolean
+  /** Runtime-only mode; configuration presets can define only bounded values. */
+  readonly toolCallLimit: 'bounded' | 'unbounded'
   /** Shared discovery budget. Final evidence reads and an authorized save have separate reserves. */
   readonly maxToolCallsPerTurn: number
   readonly maxToolAttemptsPerTurn: number

@@ -105,6 +105,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-tool':
         specifier: link:../../../packages/client/ui-tool
         version: link:../../../packages/client/ui-tool
+      '@deepseek-ai/dsh-commands':
+        specifier: link:../../../packages/interaction/commands
+        version: link:../../../packages/interaction/commands
       '@deepseek-ai/dsh-credentials':
         specifier: link:../../../packages/credentials/credentials
         version: link:../../../packages/credentials/credentials

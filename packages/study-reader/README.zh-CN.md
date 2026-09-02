@@ -24,6 +24,9 @@ pnpm run install:dsh -- --dsh-home "$HOME/.dsh"
 - MinerU 官方云端和兼容的本地 Docker 连接
 - 通过 DSH Host locale 提供简体中文和英文界面
 
+复杂任务可使用 `/reader-unbounded <任务>`。它只为该任务取消 Reader 工具调用
+次数限制；下一条普通消息自动恢复，文献权限与写入授权等安全边界保持不变。
+
 整个浏览器界面会跟随 DSH 的简体中文/英文偏好实时切换，无需重启。导入的标题和用户自己编写的内容保持原语言。
 
 开发、安全与可复现源码打包说明见 [GitHub 仓库 README](https://github.com/Qqiutand/dsh-study-reader/blob/main/README.zh-CN.md)。

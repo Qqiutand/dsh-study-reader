@@ -3,12 +3,19 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { describe, expect, it, vi } from 'vitest'
 import * as AgentBroker from '../src/agent/index.ts'
 import type { StudyAgentProvider } from '../src/agent/index.ts'
+import type { CommandDefinition } from '@deepseek-ai/dsh-commands'
 import * as Tools from '../src/tools/index.ts'
 
 class Registry extends Service {
   readonly captured: any[] = []
   constructor(ctx: Context) { super(ctx, 'tools') }
   register(tool: any) { this.captured.push(tool); return () => {} }
+}
+
+class CommandRegistry extends Service {
+  readonly captured: CommandDefinition[] = []
+  constructor(ctx: Context) { super(ctx, 'commands') }
+  register(command: CommandDefinition) { this.captured.push(command); return () => {} }
 }
 
 function currentAgent(): Agent {
@@ -37,6 +44,7 @@ describe('Reader tools', () => {
   it('registers the six native Reader tools and returns structured public references', async () => {
     const ctx = new Context()
     const registry = new Registry(ctx)
+    const commands = new CommandRegistry(ctx)
     await ctx.plugin(AgentBroker, { provider: 'study' })
     ctx.studyAgent.registerProvider(provider())
     await ctx.plugin(Tools, {})
@@ -46,6 +54,11 @@ describe('Reader tools', () => {
       'reader_get_context', 'reader_list_documents', 'reader_get_outline', 'reader_search_passages',
       'reader_read_passage', 'reader_save_note',
     ])
+    expect(commands.captured).toHaveLength(1)
+    expect(commands.captured[0]).toMatchObject({
+      name: 'reader-unbounded',
+      input: { hint: '<task>' },
+    })
     const getContext = registry.captured.find(tool => tool.name === 'reader_get_context')
     const context = await getContext.execute({}, { agent, signal: new AbortController().signal, concludeTurn: vi.fn() })
     expect(context).toMatchObject({ status: 'success', data: { library: { readyCount: 2, documents: [{ title: 'Book' }, { title: 'Second Book' }] } } })

@@ -24,6 +24,10 @@ This installs dependencies, builds and verifies the package, installs the
 - Official MinerU cloud and compatible local Docker connections
 - English and Simplified Chinese browser UI through the DSH Host locale
 
+Use `/reader-unbounded <task>` for a complex one-off task. It removes Reader
+tool-call count limits only for that task; the next ordinary message returns to
+the bounded policy while document and write-authorization boundaries stay active.
+
 The complete browser surface follows the DSH English/Simplified Chinese preference without a restart. Imported titles and user-authored content remain in their original language.
 
 For development, security, and reproducible source packaging, see the [repository README](https://github.com/Qqiutand/dsh-study-reader#readme).

@@ -8,6 +8,7 @@ const allTools = new Set(createReaderToolSpecs().map(spec => spec.name))
 const profile: StudyReaderProfile = {
   allowedSkills: new Set(), allowedTools: allTools,
   allowLibraryWideSearch: true, allowPersistentWrites: true,
+  toolCallLimit: 'bounded',
   maxToolCallsPerTurn: 8, maxToolAttemptsPerTurn: 10,
 }
 
@@ -48,6 +49,33 @@ describe('Reader Tool runtime policy', () => {
     expect((await runtime.execute('reader_search_passages', { query: 'second', scope }, new AbortController().signal)).status).toBe('empty')
     expect(await runtime.execute('reader_search_passages', { query: 'third', scope }, new AbortController().signal)).toMatchObject({ status: 'error', error: { code: 'SEARCH_STOPPED' } })
     expect(searchPassages).toHaveBeenCalledTimes(2)
+  })
+
+  it('removes count limits in unbounded mode but still rejects an exact duplicate', async () => {
+    const searchPassages = vi.fn(async () => ({ passages: [], truncated: false }))
+    const host = { capabilities: new Set(['passages.search']), getContext: vi.fn(), searchPassages } as unknown as ReaderHost
+    const runtime = dispatcher({
+      host,
+      profile: {
+        ...profile,
+        toolCallLimit: 'unbounded',
+        maxToolCallsPerTurn: 1,
+        maxToolAttemptsPerTurn: 1,
+      },
+    })
+    const signal = new AbortController().signal
+
+    for (let index = 0; index < 20; index += 1) {
+      expect(await runtime.execute('reader_search_passages', {
+        query: `distinct query ${String(index)}`,
+        scope: { kind: 'conversation' },
+      }, signal)).toMatchObject({ status: 'empty' })
+    }
+    expect(await runtime.execute('reader_search_passages', {
+      query: 'distinct query 0',
+      scope: { kind: 'conversation' },
+    }, signal)).toMatchObject({ status: 'error', error: { code: 'DUPLICATE_CALL' } })
+    expect(searchPassages).toHaveBeenCalledTimes(20)
   })
 
   it('reserves final evidence reads and one authorized save after the shared discovery budget', async () => {

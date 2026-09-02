@@ -1,6 +1,7 @@
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { describe, expect, it } from 'vitest'
 import type { ReaderHost } from '../src/ai/contracts.ts'
+import { READER_UNBOUNDED_USER_SOURCE } from '../src/ai/reader-unbounded.ts'
 import { detectTurnIntents } from '../src/ai/skill-catalog.ts'
 import { normalizeStudyReaderProfile, ReaderTurnManager } from '../src/ai/turn-runtime.ts'
 
@@ -10,6 +11,10 @@ function agent(events: readonly { readonly type: string; readonly data: unknown 
 
 function userMessage(text: string) {
   return { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text }] } }
+}
+
+function unboundedUserMessage(text: string) {
+  return { type: 'user/message', data: { source: READER_UNBOUNDED_USER_SOURCE, content: [{ type: 'text', text }] } }
 }
 
 function skillInvocation(name: string) {
@@ -54,7 +59,38 @@ describe('ReaderTurnManager', () => {
   })
 
   it('leaves enough malformed-call headroom for final evidence retrieval', () => {
-    expect(normalizeStudyReaderProfile()).toMatchObject({ maxToolCallsPerTurn: 6, maxToolAttemptsPerTurn: 15 })
+    expect(normalizeStudyReaderProfile()).toMatchObject({
+      toolCallLimit: 'bounded',
+      maxToolCallsPerTurn: 6,
+      maxToolAttemptsPerTurn: 15,
+    })
+  })
+
+  it('applies the unbounded policy and runtime guidance only to the command task turn', async () => {
+    const events: Array<{ type: string; data: unknown }> = [
+      { type: 'turn/start', data: { turn: 1 } },
+      unboundedUserMessage('跨多本文献完成一次系统梳理。'),
+    ]
+    const current = agent(events)
+    const manager = new ReaderTurnManager({
+      createHost: () => host(),
+      resolveProfile: async () => ({ maxToolCallsPerTurn: 2, maxToolAttemptsPerTurn: 3 }),
+      resolveSkillId: () => undefined,
+    })
+
+    const commandTurn = await manager.view(current)
+    expect(commandTurn.toolCallLimit).toBe('unbounded')
+    expect(commandTurn.contextAddon).toContain('/reader-unbounded')
+    expect(commandTurn.contextAddon).toContain('完全相同参数的重复调用限制仍然生效')
+
+    events.push(
+      { type: 'turn/end', data: { turn: 1 } },
+      { type: 'turn/start', data: { turn: 2 } },
+      userMessage('普通问题。'),
+    )
+    const nextTurn = await manager.view(current)
+    expect(nextTurn.toolCallLimit).toBe('bounded')
+    expect(nextTurn.contextAddon).not.toContain('/reader-unbounded')
   })
 
   it('keeps all core read tools visible and injects every conversation document without private ids', async () => {

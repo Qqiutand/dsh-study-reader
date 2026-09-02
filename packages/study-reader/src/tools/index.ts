@@ -1,10 +1,12 @@
 /** DSH-native registrations for the six least-authority Reader tools. */
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-commands'
 import { defineTool, type PreToolDecision } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import z from '@deepseek-ai/schemastery'
 import { READER_TOOL_NAMES } from '../ai/contracts.ts'
 import { createReaderToolSpecs } from '../ai/reader-tools.ts'
+import { createReaderUnboundedCommand } from '../study/reader-unbounded-command.ts'
 
 export { DEFAULT_STUDY_TOOL_NAMES } from './specs.ts'
 
@@ -56,6 +58,13 @@ function parameterSpec(root: SchemaRecord): Record<string, SchemaRecord> {
 const render = (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }]
 
 export function apply(ctx: Context): void {
+  // Register beside the Reader tools so the command is scoped to agents that
+  // actually compose this capability. Its task message owns the only mode
+  // marker; no persistent on/off state exists.
+  ctx.inject(['commands'], commandCtx => {
+    commandCtx.commands.register(createReaderUnboundedCommand())
+  })
+
   for (const spec of createReaderToolSpecs()) {
     ctx.tools.register(defineTool({
       name: spec.name,

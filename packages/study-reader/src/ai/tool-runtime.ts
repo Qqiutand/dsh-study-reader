@@ -48,6 +48,7 @@ export class ToolCallGuard {
   private readonly emptySearchesByScope = new Map<string, number>()
 
   beginAttempt(profile: StudyReaderProfile): ToolResult<never> | undefined {
+    if (profile.toolCallLimit === 'unbounded') return undefined
     this.attempts += 1
     return this.attempts > profile.maxToolAttemptsPerTurn ? toolResult.error('CALL_BUDGET_EXCEEDED', '本轮工具尝试次数已经达到上限') : undefined
   }
@@ -61,12 +62,14 @@ export class ToolCallGuard {
     const current = this.callsByTool.get(spec.name) ?? 0
     const signature = `${spec.name}:${stableStringify(input)}`
     if (this.signatures.has(signature)) return toolResult.error('DUPLICATE_CALL', '禁止在同一轮中使用完全相同的参数重复调用工具')
-    if (spec.name === 'reader_search_passages') {
+    if (context.profile.toolCallLimit === 'bounded' && spec.name === 'reader_search_passages') {
       const scope = searchScope(input)
       if (scope !== undefined && (this.emptySearchesByScope.get(scope) ?? 0) >= 2) return toolResult.error('SEARCH_STOPPED', '该检索范围已经经历原查询和一次合理改写，必须停止继续检索')
     }
     const maximum = context.profile.maxToolCallsPerTurn
-    if (this.completedCalls >= maximum && current >= (FINALIZATION_RESERVE[spec.name] ?? 0)) {
+    if (context.profile.toolCallLimit === 'bounded'
+      && this.completedCalls >= maximum
+      && current >= (FINALIZATION_RESERVE[spec.name] ?? 0)) {
       const message = spec.name === 'reader_read_passage'
         ? '本轮已经完成两次正文读取，请使用已返回的正文作答'
         : spec.name === 'reader_save_note'

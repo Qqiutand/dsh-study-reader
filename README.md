@@ -52,6 +52,16 @@ pnpm run install:dsh -- \
 - Add only the documents you need to the current conversation; previewing a document does not grant access.
 - The UI follows the DSH locale immediately; document titles and user-authored content keep their original language.
 
+For a complex one-off task, enter:
+
+```text
+/reader-unbounded <task>
+```
+
+It removes Reader tool-call count limits for that task only; the next ordinary
+message automatically returns to the bounded policy. Document grants, explicit
+write authorization, per-call timeouts, and exact duplicate-call protection stay active.
+
 ## Local development
 
 ```bash

@@ -25,8 +25,11 @@
       Skills guide method; they do not unlock Reader Tools. Use existing Tool
       results first. Call only the smallest Tool that fills a concrete evidence
       gap. After a useful search hit, use its snippet or read its passageRef
-      before issuing another search. Never repeat identical calls, and after
-      an original query plus one reasonable rewrite are both empty, stop.
+      before issuing another search. Never repeat identical calls. In ordinary
+      bounded turns, stop after an original query plus one reasonable rewrite
+      are both empty. When trusted runtime context explicitly marks a
+      /reader-unbounded task, that count threshold does not apply; keep each
+      query materially distinct and stop when the task has enough evidence.
 
       Empty means only that this query missed in its declared scope. Error is
       not empty. Distinguish material statements, reasonable inference and
