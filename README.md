@@ -67,20 +67,34 @@ write authorization, per-call timeouts, and exact duplicate-call protection stay
 
 ### External AI access (MCP)
 
-Open **Bookroom → External AI access**, select the documents for one connection,
-and create it. The page shows a bearer token once and generates the matching
+Open **Bookroom → External AI access**, give the reading set a display label and
+a unique Codex MCP name, then select documents from the whole library,
+uncategorized documents, or a library folder. You can also load the current
+conversation's documents or copy an existing connection's set into a new draft.
+
+Each named connection gets its own bearer token and environment variable, so
+`reader-probability` and `reader-optics` can expose different document sets at
+the same time. The page shows a bearer token once and generates the matching
 Codex configuration. Keep `pnpm dsh web` running, export the shown token before
 starting Codex, and add the generated block to `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.dsh_reader]
+[mcp_servers.reader-probability]
 url = "http://127.0.0.1:PORT/study-reader/mcp"
-bearer_token_env_var = "DSH_STUDY_READER_TOKEN"
+bearer_token_env_var = "DSH_STUDY_READER_PROBABILITY_TOKEN"
 ```
+
+The environment-variable name is derived predictably from the MCP name. Variables
+for multiple connections can be exported together; they do not need to be switched.
+Token values remain distinct so each reading set can be authorized and revoked
+independently. Copy the actual generated block from the page.
 
 The connection exposes only `reader_get_context`, `reader_list_documents`,
 `reader_get_outline`, `reader_search_passages`, and `reader_read_passage`.
-Its document set is fixed until you revoke it and create another connection.
+The external MCP server has no per-turn or per-session Reader call-count budget.
+Per-call result sizes, timeouts, authorization, and opaque-reference boundaries
+still apply, and Codex can retain its own session, context, or usage limits.
+Its document set is fixed until you copy or create another connection and revoke it.
 DSH presets, Skills, conversation memory, imports, deletion, and note writes
 remain inside DSH and are not exposed through MCP.
 

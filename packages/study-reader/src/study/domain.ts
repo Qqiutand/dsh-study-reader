@@ -76,6 +76,9 @@ const externalAccessRecordSchema = z.object({
   schemaVersion: z.literal(1),
   id: z.string().regex(/^external-[a-f0-9]{32}$/u),
   label: z.string().min(1).max(120),
+  // v0.7.0 records used one global `dsh_reader` name. Keeping this optional
+  // is the compatibility path for those already-installed records.
+  mcpServerName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u).optional(),
   sourceIds: z.array(z.string()).min(1).max(100),
   createdAt: z.number(),
   expiresAt: z.number(),

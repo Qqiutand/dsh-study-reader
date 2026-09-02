@@ -36,7 +36,7 @@ async function setup() {
 describe('external MCP access manager', () => {
   it('persists only a secret-free grant and authenticates after restart', async () => {
     const { root, records, manager } = await setup()
-    const created = await manager.create({ commandId: 'create-1', label: 'Codex', sourceIds: ['source-b', 'source-a'] as SourceId[], expiresInDays: 30 })
+    const created = await manager.create({ commandId: 'create-1', label: 'Probability books', mcpServerName: 'reader-probability', sourceIds: ['source-b', 'source-a'] as SourceId[], expiresInDays: 30 })
 
     expect(created.token).toMatch(/^dsr_v1\.external-[a-f0-9]{32}\.[A-Za-z0-9_-]{43}$/)
     expect(created.record.sourceIds).toEqual(['source-a', 'source-b'])
@@ -44,12 +44,12 @@ describe('external MCP access manager', () => {
     expect((await stat(join(root, 'external-mcp.key'))).mode & 0o777).toBe(0o600)
 
     const restarted = await ExternalAccessManager.open(records, root)
-    expect(restarted.authenticate(created.token)).toMatchObject({ id: created.record.id, label: 'Codex' })
+    expect(restarted.authenticate(created.token)).toMatchObject({ id: created.record.id, label: 'Probability books', mcpServerName: 'reader-probability' })
   })
 
   it('replays create commands deterministically and rejects conflicting reuse', async () => {
     const { manager } = await setup()
-    const input = { commandId: 'create-retry', label: 'Research', sourceIds: ['source-a'] as SourceId[], expiresInDays: 7 }
+    const input = { commandId: 'create-retry', label: 'Research', mcpServerName: 'reader-research', sourceIds: ['source-a'] as SourceId[], expiresInDays: 7 }
     const first = await manager.create(input)
     const replay = await manager.create(input)
     expect(replay).toEqual(first)
@@ -58,7 +58,7 @@ describe('external MCP access manager', () => {
 
   it('serializes concurrent retries into one durable connection', async () => {
     const { manager, records } = await setup()
-    const input = { commandId: 'create-concurrent', label: 'Codex', sourceIds: ['source-a'] as SourceId[], expiresInDays: 30 }
+    const input = { commandId: 'create-concurrent', label: 'Codex', mcpServerName: 'reader-library', sourceIds: ['source-a'] as SourceId[], expiresInDays: 30 }
     const [first, second] = await Promise.all([manager.create(input), manager.create(input)])
     expect(first).toEqual(second)
     expect(records.size).toBe(1)
@@ -72,9 +72,18 @@ describe('external MCP access manager', () => {
     expect((await stat(keyPath)).mode & 0o777).toBe(0o600)
   })
 
+  it('keeps active named document sets distinct and permits name reuse after revocation', async () => {
+    const { manager } = await setup()
+    const probability = await manager.create({ commandId: 'create-probability', label: 'Probability', mcpServerName: 'reader-probability', sourceIds: ['source-a'] as SourceId[], expiresInDays: 30 })
+    await manager.create({ commandId: 'create-optics', label: 'Optics', mcpServerName: 'reader-optics', sourceIds: ['source-b'] as SourceId[], expiresInDays: 30 })
+    await expect(manager.create({ commandId: 'create-duplicate', label: 'Other', mcpServerName: 'reader-probability', sourceIds: ['source-c'] as SourceId[], expiresInDays: 30 })).rejects.toMatchObject({ code: 'EXTERNAL_ACCESS_MCP_NAME_CONFLICT' })
+    await manager.revoke(probability.record.id, 'revoke-probability', probability.record.version)
+    await expect(manager.create({ commandId: 'reuse-probability', label: 'Probability v2', mcpServerName: 'reader-probability', sourceIds: ['source-c'] as SourceId[], expiresInDays: 30 })).resolves.toMatchObject({ record: { mcpServerName: 'reader-probability' } })
+  })
+
   it('revokes immediately and keeps revoke retries idempotent', async () => {
     const { manager } = await setup()
-    const created = await manager.create({ commandId: 'create-revoke', label: 'Codex', sourceIds: ['source-a'] as SourceId[], expiresInDays: 30 })
+    const created = await manager.create({ commandId: 'create-revoke', label: 'Codex', mcpServerName: 'reader-library', sourceIds: ['source-a'] as SourceId[], expiresInDays: 30 })
     const revoked = await manager.revoke(created.record.id, 'revoke-1', created.record.version)
     expect(revoked).toMatchObject({ version: 2, lastCommandId: 'revoke-1', revokedAt: expect.any(Number) })
     expect(manager.authenticate(created.token)).toBeUndefined()

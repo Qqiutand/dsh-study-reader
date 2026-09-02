@@ -63,7 +63,7 @@ import { compileToolDescription, schemaHash, STUDY_TOOL_SPECS } from '../tools/s
 import { compileInjection } from '../studio/injection-compiler.ts'
 import { InjectionStudioRepository } from '../studio/repository.ts'
 import { ProviderConnectionRepository } from '../studio/provider-connections.ts'
-import { ExternalAccessManager } from './external-access.ts'
+import { ExternalAccessManager, externalMcpServerName, externalTokenEnvironmentVariable } from './external-access.ts'
 import { READER_TOOL_NAMES, type ReaderToolName } from '../ai/contracts.ts'
 import { STUDY_READER_SKILL_IDS, STUDY_READER_SKILLS, type StudyReaderSkillId } from '../ai/skill-catalog.ts'
 import { normalizeStudyReaderProfile, type SerializedStudyReaderProfile } from '../ai/turn-runtime.ts'
@@ -874,6 +874,7 @@ export class StudyService extends TypertRemoteService {
     return {
       id: record.id,
       label: record.label,
+      mcpServerName: externalMcpServerName(record),
       sourceIds: record.sourceIds,
       documentTitles,
       missingDocumentCount,
@@ -893,8 +894,14 @@ export class StudyService extends TypertRemoteService {
       enabled: this.deps.config.externalMcpEnabled,
       controlMode: this.deps.config.managementControlMode,
       mcpUrl: this.deps.config.externalMcpUrl,
+      folders: [...this.management.folders.values()]
+        .filter(folder => folder.kind === 'library')
+        .map(folder => ({ id: folder.id, name: folder.name, ...(folder.parentId === undefined ? {} : { parentId: folder.parentId }) })),
       sources: this.listSourcesInScope(undefined, Number.MAX_SAFE_INTEGER, undefined, Number.MAX_SAFE_INTEGER)
-        .map(source => ({ ...source, selectedInConversation: this.hasSourceAccess(sessionId, source.id) })),
+        .map(source => {
+          const folderId = this.deps.managementSourceLocations.get(source.id)?.folderId
+          return { ...source, ...(folderId === undefined ? {} : { folderId }), selectedInConversation: this.hasSourceAccess(sessionId, source.id) }
+        }),
       connections: this.deps.externalAccess.list().map(record => this.externalAccessView(record)),
     }
   }
@@ -918,16 +925,19 @@ export class StudyService extends TypertRemoteService {
     const created = await this.deps.externalAccess.create({
       commandId: request.commandId,
       label: request.label,
+      mcpServerName: request.mcpServerName,
       sourceIds,
       expiresInDays: request.expiresInDays,
     })
     const url = this.deps.config.externalMcpUrl
+    const mcpServerName = externalMcpServerName(created.record)
+    const environmentVariable = externalTokenEnvironmentVariable(mcpServerName)
     return {
       connection: this.externalAccessView(created.record),
       token: created.token,
       mcpUrl: url,
-      environmentVariable: 'DSH_STUDY_READER_TOKEN',
-      codexConfig: `[mcp_servers.dsh_reader]\nurl = ${JSON.stringify(url)}\nbearer_token_env_var = "DSH_STUDY_READER_TOKEN"`,
+      environmentVariable,
+      codexConfig: `[mcp_servers.${mcpServerName}]\nurl = ${JSON.stringify(url)}\nbearer_token_env_var = ${JSON.stringify(environmentVariable)}`,
     }
   }
 

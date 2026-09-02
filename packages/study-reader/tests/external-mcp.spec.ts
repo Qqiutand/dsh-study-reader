@@ -60,9 +60,13 @@ describe('embedded external MCP', () => {
       sessionId: 'mcp-test',
       commandId: 'create-mcp-test',
       label: 'Codex test',
+      mcpServerName: 'reader-probability',
       sourceIds: [source.id],
       expiresInDays: 7,
     })
+    expect(created.codexConfig).toContain('[mcp_servers.reader-probability]')
+    expect(created.codexConfig).toContain(`bearer_token_env_var = "${created.environmentVariable}"`)
+    expect(created.environmentVariable).toBe('DSH_STUDY_READER_PROBABILITY_TOKEN')
 
     const unauthorized = await rpc(harness, undefined, 1, 'initialize', {
       protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' },
@@ -70,9 +74,11 @@ describe('embedded external MCP', () => {
     expect(unauthorized.response.status).toBe(401)
     expect(unauthorized.response.headers.get('www-authenticate')).toBe('Bearer')
 
-    rpcResult(await rpc(harness, created.token, 2, 'initialize', {
+    const initialized = rpcResult(await rpc(harness, created.token, 2, 'initialize', {
       protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' },
     }))
+    expect(initialized.instructions).toContain('Named Reader connection reader-probability')
+    expect(initialized.instructions).toContain('no per-turn or per-session Reader call-count budget')
     const listed = rpcResult(await rpc(harness, created.token, 3, 'tools/list'))
     expect((listed.tools as readonly { readonly name: string }[]).map(tool => tool.name)).toEqual([
       'reader_get_context', 'reader_list_documents', 'reader_get_outline', 'reader_search_passages', 'reader_read_passage',
@@ -105,6 +111,14 @@ describe('embedded external MCP', () => {
       arguments: { target: { kind: 'passage_ref', passageRef: searchData.results[0]!.passageRef }, window: 1 },
     }))
     expect(JSON.stringify(read)).toContain('社会科学的核心问题')
+
+    // This deliberately exceeds the ordinary DSH Reader discovery budget.
+    // External MCP grants do not maintain a call-count budget.
+    for (let index = 0; index < 20; index += 1) {
+      const repeated = rpcResult(await rpc(harness, created.token, 20 + index, 'tools/call', { name: 'reader_get_context', arguments: {} }))
+      expect(repeated.structuredContent).toMatchObject({ status: 'success' })
+      expect(JSON.stringify(repeated)).not.toContain('CALL_BUDGET_EXCEEDED')
+    }
 
     await harness.ctx.study.revokeExternalAccessForClient({
       sessionId: 'mcp-test',

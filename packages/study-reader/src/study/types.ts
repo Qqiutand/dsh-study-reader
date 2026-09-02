@@ -215,6 +215,8 @@ export interface ExternalAccessRecord {
   readonly schemaVersion: 1
   readonly id: string
   readonly label: string
+  /** Codex config key. Optional only for records created by v0.7.0. */
+  readonly mcpServerName?: string
   /** Exact library sources visible through this connection. */
   readonly sourceIds: readonly SourceId[]
   readonly createdAt: number
@@ -231,6 +233,7 @@ export interface ExternalAccessRecord {
 export interface ExternalAccessView {
   readonly id: string
   readonly label: string
+  readonly mcpServerName: string
   readonly sourceIds: readonly string[]
   readonly documentTitles: readonly string[]
   readonly missingDocumentCount: number
@@ -246,7 +249,15 @@ export interface ExternalAccessSnapshot {
   readonly enabled: boolean
   readonly controlMode: 'trusted-local-user' | 'disabled'
   readonly mcpUrl: string
-  readonly sources: readonly (SourceSummary & { readonly selectedInConversation: boolean })[]
+  readonly folders: readonly {
+    readonly id: string
+    readonly name: string
+    readonly parentId?: string
+  }[]
+  readonly sources: readonly (SourceSummary & {
+    readonly folderId?: string
+    readonly selectedInConversation: boolean
+  })[]
   readonly connections: readonly ExternalAccessView[]
 }
 
@@ -254,6 +265,7 @@ export interface CreateExternalAccessRequest {
   readonly sessionId: string
   readonly commandId: string
   readonly label: string
+  readonly mcpServerName: string
   readonly sourceIds: readonly string[]
   readonly expiresInDays: number
 }
@@ -263,7 +275,7 @@ export interface CreateExternalAccessResult {
   readonly connection: ExternalAccessView
   readonly token: string
   readonly mcpUrl: string
-  readonly environmentVariable: 'DSH_STUDY_READER_TOKEN'
+  readonly environmentVariable: string
   readonly codexConfig: string
 }
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1 - 2026-09-02
+
+- Turned external connections into named reading sets: every grant now generates its own Codex `mcp_servers` key and token environment variable, so multiple fixed document sets can be configured at the same time. Existing v0.7.0 connections remain compatible as `dsh_reader`.
+- Added library-folder filtering with all-document and uncategorized views, an explicit “use current conversation” action, and a safe “copy set” action for creating a new connection from an existing document scope.
+- Clarified that embedded external MCP reads have no per-turn or per-session call-count budget, and added repeated-call regression coverage. Per-call result, timeout, authorization, and opaque-reference boundaries remain enforced.
+
 ## 0.7.0 - 2026-09-02
 
 - Added a loopback-only Streamable HTTP MCP endpoint over the existing Study Reader library. External clients receive only the five read-only Reader tools and never gain import, deletion, note-write, Skill, preset, or conversation-memory access.

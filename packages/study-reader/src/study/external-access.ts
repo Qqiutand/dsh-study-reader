@@ -11,6 +11,8 @@ const MASTER_KEY_FILE = 'external-mcp.key'
 const COMMAND_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/u
 const ACCESS_ID_PATTERN = /^external-[a-f0-9]{32}$/u
 const TOKEN_SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/u
+const MCP_SERVER_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u
+const LEGACY_MCP_SERVER_NAME = 'dsh_reader'
 
 function errorCode(error: unknown): string | undefined {
   return error !== null && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
@@ -59,6 +61,24 @@ function normalizedLabel(value: string): string {
   return label
 }
 
+function normalizedMcpServerName(value: string): string {
+  const name = value.trim()
+  if (!MCP_SERVER_NAME_PATTERN.test(name)) {
+    throw new StudyError('MCP server name must contain 1 to 64 letters, numbers, underscores, or hyphens', 'EXTERNAL_ACCESS_MCP_NAME_INVALID')
+  }
+  return name
+}
+
+export function externalMcpServerName(record: ExternalAccessRecord): string {
+  return record.mcpServerName ?? LEGACY_MCP_SERVER_NAME
+}
+
+/** Stable, human-readable Codex environment key derived from one MCP name. */
+export function externalTokenEnvironmentVariable(mcpServerName: string): string {
+  const semanticName = mcpServerName.replace(/^reader[-_]?/iu, '') || mcpServerName
+  return `DSH_STUDY_READER_${semanticName.toUpperCase().replaceAll(/[^A-Z0-9]+/gu, '_')}_TOKEN`
+}
+
 function assertCommandId(commandId: string): void {
   if (!COMMAND_PATTERN.test(commandId)) throw new StudyError('external access commandId is invalid', 'EXTERNAL_ACCESS_COMMAND_ID_INVALID')
 }
@@ -71,6 +91,7 @@ function tokenState(record: ExternalAccessRecord, now: number): 'active' | 'expi
 export interface CreateExternalAccessInput {
   readonly commandId: string
   readonly label: string
+  readonly mcpServerName: string
   readonly sourceIds: readonly SourceId[]
   readonly expiresInDays: number
 }
@@ -99,6 +120,7 @@ export class ExternalAccessManager {
   async create(input: CreateExternalAccessInput): Promise<{ readonly record: ExternalAccessRecord; readonly token: string }> {
     assertCommandId(input.commandId)
     const label = normalizedLabel(input.label)
+    const mcpServerName = normalizedMcpServerName(input.mcpServerName)
     const sourceIds = [...new Set(input.sourceIds)].sort((left, right) => String(left).localeCompare(String(right)))
     if (sourceIds.length === 0 || sourceIds.length > 100) {
       throw new StudyError('external access requires 1 to 100 documents', 'EXTERNAL_ACCESS_SCOPE_INVALID')
@@ -106,18 +128,29 @@ export class ExternalAccessManager {
     if (!Number.isInteger(input.expiresInDays) || input.expiresInDays < 1 || input.expiresInDays > 365) {
       throw new StudyError('external access expiry must be between 1 and 365 days', 'EXTERNAL_ACCESS_EXPIRY_INVALID')
     }
-    const hash = payloadHash({ label, sourceIds, expiresInDays: input.expiresInDays })
-    return await this.lock(`create:${input.commandId}`, async () => {
+    const hash = payloadHash({ label, mcpServerName, sourceIds, expiresInDays: input.expiresInDays })
+    // One create lock also makes the active MCP-name uniqueness check atomic
+    // across different browser command ids.
+    return await this.lock('create', async () => {
       const replay = this.list().find(record => record.createCommandId === input.commandId)
       if (replay !== undefined) {
         if (replay.createPayloadHash !== hash) throw new StudyError('commandId was reused with a different external access request', 'COMMAND_ID_CONFLICT')
         return { record: replay, token: this.tokenFor(replay.id) }
       }
       const now = Date.now()
+      const activeRecords = this.list().filter(record => tokenState(record, now) === 'active')
+      if (activeRecords.some(record => externalMcpServerName(record) === mcpServerName)) {
+        throw new StudyError(`an active external connection already uses MCP name "${mcpServerName}"`, 'EXTERNAL_ACCESS_MCP_NAME_CONFLICT')
+      }
+      const environmentVariable = externalTokenEnvironmentVariable(mcpServerName)
+      if (activeRecords.some(record => externalTokenEnvironmentVariable(externalMcpServerName(record)) === environmentVariable)) {
+        throw new StudyError(`MCP name "${mcpServerName}" collides with an active connection's token environment variable`, 'EXTERNAL_ACCESS_MCP_NAME_CONFLICT')
+      }
       const record: ExternalAccessRecord = {
         schemaVersion: 1,
         id: `external-${randomUUID().replaceAll('-', '')}`,
         label,
+        mcpServerName,
         sourceIds,
         createdAt: now,
         expiresAt: now + input.expiresInDays * 86_400_000,
