@@ -14,6 +14,7 @@ _Illustrative empty state with no real documents or user data._
 - Original-document and MinerU structured previews without saved reading positions, with ZIP export of extraction results.
 - Conversation-scoped document access that keeps unrelated content out of context.
 - Reusable presets combining prompt injections, Skills, and Tools.
+- Per-folder new-conversation defaults for the currently selected documents and Reader configuration.
 - Official MinerU cloud and compatible local Docker services.
 - English and Simplified Chinese UI that follows the DSH locale.
 
@@ -50,6 +51,7 @@ pnpm run install:dsh -- \
 - Open **Bookroom → Service connections** to configure a MinerU API key or local Docker service.
 - Open **Bookroom → Configuration presets** to combine prompt injections, Skills, and Tools.
 - Add only the documents you need to the current conversation; previewing a document does not grant access.
+- On **Bookroom → Overview**, use **Set as Workspace default** to copy the current document grants and Reader configuration into future top-level conversations created in the same folder. Each conversation imports the snapshot once and can then be changed independently; existing conversations and forks are not modified.
 - The UI follows the DSH locale immediately; document titles and user-authored content keep their original language.
 
 For a complex one-off task, enter:

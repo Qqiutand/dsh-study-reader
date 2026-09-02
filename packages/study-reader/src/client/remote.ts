@@ -10,6 +10,7 @@ import type {
   GetSourcePreviewRequest, SourcePreview,
   SourceSummary, StudyBootstrapView, ToolDescriptorView,
   ProviderConnectionView,
+  WorkspaceDefaultView, SaveWorkspaceDefaultRequest, ClearWorkspaceDefaultRequest,
 } from '../study/types.ts'
 import type {
   AgentGrant, ManagementFolder, ManagementFolderView, ManagementProposal,
@@ -41,6 +42,9 @@ export interface StudyRemote {
   deleteProviderConnection(request: DeleteProviderConnectionRequest): Call<{ readonly deleted: true }>
   testProviderConnection(request: { readonly sessionId: string; readonly providerId: string }): Call<ProviderConnectionTestResult>
   studioSnapshot(request: { readonly sessionId: string }): Call<InjectionStudioSnapshot>
+  getWorkspaceDefault(request: { readonly sessionId: string }): Call<WorkspaceDefaultView>
+  saveWorkspaceDefault(request: SaveWorkspaceDefaultRequest): Call<WorkspaceDefaultView>
+  clearWorkspaceDefault(request: ClearWorkspaceDefaultRequest): Call<WorkspaceDefaultView>
   executeStudioCommand(request: ExecuteInjectionStudioCommandRequest): Call<ExecuteInjectionStudioCommandResult>
   compileInjectionProfile(request: CompileInjectionPreviewRequest): Call<CompiledInjection>
   listTreeChildren(request: ListTreeChildrenRequest): Call<TreeChildrenResult>

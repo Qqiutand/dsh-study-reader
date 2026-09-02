@@ -7,6 +7,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import { isAbsolute } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { freezeMessage, MessageId, type ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -44,6 +45,8 @@ import type {
   StartCognitiveRequest, StartCognitiveResult, ReadRange, ReadRequest, ReadResult,
   TermProfileRequest, TermProfileResult,
   SearchDocumentRequest, SearchDocumentResult, ToolDescriptorView, ProviderConnectionView,
+  WorkspaceDefaultApplicationRecord, WorkspaceDefaultRecord, WorkspaceDefaultView,
+  SaveWorkspaceDefaultRequest, ClearWorkspaceDefaultRequest,
 } from './types.ts'
 import { isStudyEventType } from '../protocol/events.ts'
 import type { CognitiveProbeOptionData } from '../protocol/events.ts'
@@ -422,6 +425,8 @@ export interface StudyServiceDeps {
   readonly memory: StudyMemoryService
   readonly sources: KvTable<SourceId, SourceRecord>
   readonly sourceAccess: KvTable<string, SourceAccessRecord>
+  readonly workspaceDefaults: KvTable<string, WorkspaceDefaultRecord>
+  readonly workspaceDefaultApplications: KvTable<string, WorkspaceDefaultApplicationRecord>
   readonly revisions: KvTable<RevisionId, RevisionRecord>
   readonly imports: KvTable<ImportId, ImportRecord>
   readonly artifactSets: KvTable<ExtractionArtifactSetId, ExtractionArtifactSetRecord>
@@ -850,10 +855,196 @@ export class StudyService extends TypertRemoteService {
     }
   }
 
+  private workspaceIdentity(sessionId: string): { readonly workspacePath: string; readonly createdAt: number; readonly parentSession?: string; readonly origin?: 'subagent' } | undefined {
+    const agent = this.deps.agents.get(sessionId as SessionId)
+    if (agent === undefined) return undefined
+    const workspacePath = agent.session.header.cwd?.trim()
+    if (workspacePath === undefined || workspacePath === '' || !isAbsolute(workspacePath)) return undefined
+    return {
+      workspacePath,
+      createdAt: agent.session.header.createdAt,
+      ...(agent.session.header.parentSession === undefined ? {} : { parentSession: String(agent.session.header.parentSession) }),
+      ...(agent.session.header.origin === undefined ? {} : { origin: agent.session.header.origin }),
+    }
+  }
+
+  private sessionSourceIds(sessionId: string): SourceId[] {
+    const sourceIds = [...this.deps.sourceAccess.entries()]
+      .flatMap(([, access]) => access.sessionId === sessionId ? [access.sourceId] : [])
+      .filter(sourceId => this.deps.sources.get(sourceId)?.currentRevisionId !== undefined)
+    return [...new Set(sourceIds)].sort((left, right) => String(left).localeCompare(String(right)))
+  }
+
+  private workspaceDefaultView(sessionId: string): WorkspaceDefaultView {
+    const identity = this.workspaceIdentity(sessionId)
+    if (identity === undefined || identity.origin === 'subagent' || identity.parentSession !== undefined) return { available: false }
+    const record = this.deps.workspaceDefaults.get(identity.workspacePath)
+    const binding = this.deps.studioInjectionBindings.get(sessionId)
+    const currentSourceIds = this.sessionSourceIds(sessionId)
+    const recordSourceIds = record?.sourceIds ?? []
+    const sourcesMatch = currentSourceIds.length === recordSourceIds.length
+      && currentSourceIds.every((sourceId, index) => sourceId === recordSourceIds[index])
+    const profileMatches = record?.profile === undefined
+      ? binding === undefined
+      : binding?.profileId === record.profile.profileId && binding.profileVersion === record.profile.profileVersion
+    const profileName = record?.profile === undefined
+      ? undefined
+      : this.deps.studioProfiles.get(record.profile.profileId)?.name
+    return {
+      available: true,
+      workspacePath: identity.workspacePath,
+      active: record?.active === true,
+      version: record?.version ?? 0,
+      sourceCount: record?.active === true ? record.sourceIds.length : 0,
+      ...(profileName === undefined ? {} : { profileName }),
+      matchesCurrent: record?.active === true && sourcesMatch && profileMatches,
+      ...(record === undefined ? {} : { updatedAt: record.updatedAt }),
+    }
+  }
+
+  /** Import a Workspace snapshot at most once, and only into Sessions created after it. */
+  async ensureWorkspaceDefaultForSession(rawSessionId: string): Promise<boolean> {
+    const sessionId = this.requireSessionId(rawSessionId, 'WORKSPACE_DEFAULT_SESSION_REQUIRED')
+    const identity = this.workspaceIdentity(sessionId)
+    if (identity === undefined || identity.origin === 'subagent' || identity.parentSession !== undefined) return false
+    const candidate = this.deps.workspaceDefaults.get(identity.workspacePath)
+    if (candidate?.active !== true || identity.createdAt < candidate.updatedAt) return false
+    const lockKeys = [
+      `session:${sessionId}`,
+      `workspace-default:${identity.workspacePath}`,
+      ...candidate.sourceIds.map(sourceId => `source:${sourceId}`),
+    ]
+    return await this.withDocumentContextLocks(lockKeys, async () => await this.withSkillConfigurationLock(async () => {
+      const latestIdentity = this.workspaceIdentity(sessionId)
+      const record = latestIdentity === undefined ? undefined : this.deps.workspaceDefaults.get(latestIdentity.workspacePath)
+      if (latestIdentity === undefined || latestIdentity.origin === 'subagent' || latestIdentity.parentSession !== undefined || record?.active !== true
+        || latestIdentity.createdAt < record.updatedAt) return false
+      const application = this.deps.workspaceDefaultApplications.get(sessionId)
+      if (application?.sessionCreatedAt === latestIdentity.createdAt
+        && application.workspacePath === latestIdentity.workspacePath) return false
+
+      const appliedAt = Date.now()
+      const sourceIds: SourceId[] = []
+      for (const sourceId of record.sourceIds) {
+        const source = this.deps.sources.get(sourceId)
+        if (source?.currentRevisionId === undefined) continue
+        try { this.assertSourceDeletionNotAdmitted(sourceId) } catch { continue }
+        sourceIds.push(sourceId)
+        if (!this.hasSourceAccess(sessionId, sourceId)) {
+          await this.deps.sourceAccess.put(sourceAccessKey(sessionId, sourceId), { sessionId, sourceId, grantedAt: appliedAt })
+        }
+      }
+
+      let profileApplied = false
+      if (this.deps.studioInjectionBindings.get(sessionId) === undefined && record.profile !== undefined) {
+        const profile = this.deps.studioProfiles.get(record.profile.profileId)
+        if (profile !== undefined && !profile.archived
+          && profile.revisions.some(revision => revision.version === record.profile!.profileVersion)) {
+          await this.deps.studioInjectionBindings.put(sessionId, {
+            sessionId,
+            profileId: record.profile.profileId,
+            profileVersion: record.profile.profileVersion,
+            recordVersion: 1,
+            appliedAt,
+            lastCommandId: `workspace-default:${record.version}:${sessionId}`,
+          })
+          profileApplied = true
+        }
+      }
+      await this.deps.workspaceDefaultApplications.put(sessionId, {
+        schemaVersion: 1,
+        sessionId,
+        sessionCreatedAt: latestIdentity.createdAt,
+        workspacePath: latestIdentity.workspacePath,
+        workspaceDefaultVersion: record.version,
+        sourceIds,
+        profileApplied,
+        appliedAt,
+      })
+      return true
+    }))
+  }
+
+  /** Read the current Workspace's future-session snapshot after one-shot import. */
+  @Remote('getWorkspaceDefault')
+  async getWorkspaceDefaultForClient(request: { readonly sessionId: string }): Promise<WorkspaceDefaultView> {
+    await this.ensureWorkspaceDefaultForSession(request.sessionId)
+    return this.workspaceDefaultView(request.sessionId)
+  }
+
+  /** Capture the current conversation's document grants and pinned Profile revision. */
+  @Remote('saveWorkspaceDefault')
+  async saveWorkspaceDefaultForClient(request: SaveWorkspaceDefaultRequest): Promise<WorkspaceDefaultView> {
+    if (this.deps.config.managementControlMode !== 'trusted-local-user') throw new StudyError('local Studio control is disabled', 'MANAGEMENT_CONTROL_DISABLED')
+    const sessionId = this.requireSessionId(request.sessionId, 'WORKSPACE_DEFAULT_SESSION_REQUIRED')
+    if (!Number.isInteger(request.expectedVersion) || request.expectedVersion < 0) throw new StudyError('Workspace default version is invalid', 'WORKSPACE_DEFAULT_VERSION_INVALID')
+    const identity = this.workspaceIdentity(sessionId)
+    if (identity === undefined || identity.origin === 'subagent' || identity.parentSession !== undefined) throw new StudyError('the current Session does not belong to a configurable Workspace', 'WORKSPACE_DEFAULT_UNAVAILABLE')
+    return await this.withDocumentContextLocks([`session:${sessionId}`, 'workspace-defaults', `workspace-default:${identity.workspacePath}`], async () => await this.withSkillConfigurationLock(async () => {
+      const current = this.deps.workspaceDefaults.get(identity.workspacePath)
+      if (current?.lastCommandId === request.commandId) return this.workspaceDefaultView(sessionId)
+      if ((current?.version ?? 0) !== request.expectedVersion) throw new StudyError('Workspace default version conflict', 'WORKSPACE_DEFAULT_VERSION_CONFLICT')
+      const sourceIds = this.sessionSourceIds(sessionId)
+      const binding = this.deps.studioInjectionBindings.get(sessionId)
+      const profile = binding === undefined ? undefined : this.deps.studioProfiles.get(binding.profileId)
+      const usableBinding = binding !== undefined && profile !== undefined && !profile.archived
+        && profile.revisions.some(revision => revision.version === binding.profileVersion) ? binding : undefined
+      const updatedAt = Date.now()
+      const record: WorkspaceDefaultRecord = {
+        schemaVersion: 1,
+        workspacePath: identity.workspacePath,
+        active: true,
+        sourceIds,
+        ...(usableBinding === undefined ? {} : { profile: { profileId: usableBinding.profileId, profileVersion: usableBinding.profileVersion } }),
+        version: (current?.version ?? 0) + 1,
+        updatedAt,
+        lastCommandId: request.commandId,
+      }
+      await this.deps.workspaceDefaults.put(identity.workspacePath, record)
+      await this.deps.workspaceDefaultApplications.put(sessionId, {
+        schemaVersion: 1,
+        sessionId,
+        sessionCreatedAt: identity.createdAt,
+        workspacePath: identity.workspacePath,
+        workspaceDefaultVersion: record.version,
+        sourceIds,
+        profileApplied: usableBinding !== undefined,
+        appliedAt: updatedAt,
+      })
+      return this.workspaceDefaultView(sessionId)
+    }))
+  }
+
+  /** Disable the current Workspace snapshot without changing any existing Session. */
+  @Remote('clearWorkspaceDefault')
+  async clearWorkspaceDefaultForClient(request: ClearWorkspaceDefaultRequest): Promise<WorkspaceDefaultView> {
+    if (this.deps.config.managementControlMode !== 'trusted-local-user') throw new StudyError('local Studio control is disabled', 'MANAGEMENT_CONTROL_DISABLED')
+    const sessionId = this.requireSessionId(request.sessionId, 'WORKSPACE_DEFAULT_SESSION_REQUIRED')
+    if (!Number.isInteger(request.expectedVersion) || request.expectedVersion < 0) throw new StudyError('Workspace default version is invalid', 'WORKSPACE_DEFAULT_VERSION_INVALID')
+    const identity = this.workspaceIdentity(sessionId)
+    if (identity === undefined || identity.origin === 'subagent' || identity.parentSession !== undefined) throw new StudyError('the current Session does not belong to a configurable Workspace', 'WORKSPACE_DEFAULT_UNAVAILABLE')
+    return await this.withDocumentContextLocks(['workspace-defaults', `workspace-default:${identity.workspacePath}`], async () => {
+      const current = this.deps.workspaceDefaults.get(identity.workspacePath)
+      if (current?.lastCommandId === request.commandId || current === undefined) return this.workspaceDefaultView(sessionId)
+      if (current.version !== request.expectedVersion) throw new StudyError('Workspace default version conflict', 'WORKSPACE_DEFAULT_VERSION_CONFLICT')
+      const { profile: _profile, ...base } = current
+      await this.deps.workspaceDefaults.put(identity.workspacePath, {
+        ...base,
+        active: false,
+        sourceIds: [],
+        version: current.version + 1,
+        updatedAt: Date.now(),
+        lastCommandId: request.commandId,
+      })
+      return this.workspaceDefaultView(sessionId)
+    })
+  }
+
   /** Browser-safe durable Prompt/Profile catalogue and pinned Session binding. */
   @Remote('studioSnapshot')
   async studioSnapshotForClient(request: { readonly sessionId: string }): Promise<InjectionStudioSnapshot> {
     if (this.deps.config.managementControlMode !== 'trusted-local-user') throw new StudyError('local Studio control is disabled', 'MANAGEMENT_CONTROL_DISABLED')
+    await this.ensureWorkspaceDefaultForSession(request.sessionId)
     const snapshot = await this.injectionStudio.snapshot(request.sessionId)
     return {
       immutableBaseline: snapshot.immutableBaseline,
@@ -1014,6 +1205,10 @@ export class StudyService extends TypertRemoteService {
   @Remote('executeStudioCommand')
   async executeStudioCommandForClient(request: ExecuteInjectionStudioCommandRequest): Promise<ExecuteInjectionStudioCommandResult> {
     if (this.deps.config.managementControlMode !== 'trusted-local-user') throw new StudyError('local Studio control is disabled', 'MANAGEMENT_CONTROL_DISABLED')
+    const protectedProfileId = request.command.kind === 'delete-profile'
+      || request.command.kind === 'archive-profile' && request.command.archived
+      ? request.command.profileId
+      : undefined
     if (request.command.kind === 'apply-asset-tree') {
       const tree = request.command.treeCommand
       const namespace = tree.kind === 'create-folder'
@@ -1044,7 +1239,13 @@ export class StudyService extends TypertRemoteService {
     if (request.command.kind === 'activate-profile') {
       await this.compileInjectionProfileForClient({ sessionId: request.sessionId, profileId: request.command.profileId, profileVersion: request.command.profileVersion })
     }
-    const result = await this.withSkillConfigurationLock(async () => await this.injectionStudio.execute(request))
+    const result = await this.withSkillConfigurationLock(async () => {
+      if (protectedProfileId !== undefined
+        && [...this.deps.workspaceDefaults.entries()].some(([, record]) => record.active && record.profile?.profileId === protectedProfileId)) {
+        throw new StudyError('profile is used by a Workspace default', 'INJECTION_PROFILE_IN_WORKSPACE_DEFAULT')
+      }
+      return await this.injectionStudio.execute(request)
+    })
     this.managedSkillCatalogInvalidator?.()
     return result
   }
@@ -2660,7 +2861,7 @@ export class StudyService extends TypertRemoteService {
 
   /** Apply one approved source deletion exactly once using durable operation evidence. */
   private async applySourceDeletion(input: { readonly sessionId: string; readonly sourceId: SourceId; readonly expectedTitle: string; readonly commandId: string }): Promise<DeleteSourceResult> {
-    return await this.withDocumentContextLocks([`source:${input.sourceId}`], async () => await this.applySourceDeletionUnlocked(input))
+    return await this.withDocumentContextLocks([`source:${input.sourceId}`, 'workspace-defaults'], async () => await this.applySourceDeletionUnlocked(input))
   }
 
   private async applySourceDeletionUnlocked(input: { readonly sessionId: string; readonly sourceId: SourceId; readonly expectedTitle: string; readonly commandId: string }): Promise<DeleteSourceResult> {
@@ -2738,6 +2939,16 @@ export class StudyService extends TypertRemoteService {
     const prepared = this.deps.managementDeletionOperations.get(`management-delete-${input.commandId}`)
     if (prepared?.state === 'prepared' && prepared.result !== undefined) {
       await this.deps.managementDeletionOperations.put(prepared.operationId, { ...prepared, result: { ...planned, result: { ...planned.result, removed: { ...planned.result.removed, memories: removedMemories } } }, updatedAt: Date.now() })
+    }
+    for (const [workspacePath, workspaceDefault] of this.deps.workspaceDefaults.entries()) {
+      if (!workspaceDefault.sourceIds.includes(sourceId)) continue
+      await this.deps.workspaceDefaults.put(workspacePath, {
+        ...workspaceDefault,
+        sourceIds: workspaceDefault.sourceIds.filter(candidate => candidate !== sourceId),
+        version: workspaceDefault.version + 1,
+        updatedAt: Date.now(),
+        lastCommandId: `source-delete:${sourceId}:${workspaceDefault.version}`,
+      })
     }
     await this.deps.sources.delete(sourceId)
 

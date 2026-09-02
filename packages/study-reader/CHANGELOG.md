@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0 - 2026-09-02
+
+- Added a per-folder Workspace default on the Bookroom Overview. It snapshots the current conversation's document grants and pinned Reader configuration for future top-level conversations in the same DSH working directory.
+- Workspace defaults are imported once before a new conversation's first Reader turn. Existing conversations, forks, and subagents are unchanged, and later per-conversation edits are never reapplied or written back to the template.
+- Added durable application receipts, restart coverage, CAS-guarded updates, source-deletion cleanup, and protection for Profile revisions referenced by an active Workspace default.
+
 ## 0.5.9 - 2026-09-02
 
 - Fixed `/reader-unbounded` command turns being cached as bounded when DSH queried pre-step Skill eligibility before committing the queued user message.

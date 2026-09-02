@@ -21,6 +21,7 @@ This installs dependencies, builds and verifies the package, installs the
 - Original PDF/EPUB preview plus bounded MinerU structured preview and ZIP export
 - Conversation-scoped document access
 - Configuration presets combining prompt injections, Skills, and Tools
+- Per-folder defaults that import the selected documents and Reader configuration once into future top-level conversations
 - Official MinerU cloud and compatible local Docker connections
 - English and Simplified Chinese browser UI through the DSH Host locale
 

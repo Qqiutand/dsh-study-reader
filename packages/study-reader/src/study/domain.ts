@@ -50,6 +50,28 @@ const sourceAccessRecordSchema = z.object({
   grantedAt: z.number(),
 })
 
+const workspaceDefaultRecordSchema = z.object({
+  schemaVersion: z.literal(1),
+  workspacePath: z.string().min(1),
+  active: z.boolean(),
+  sourceIds: z.array(z.string()),
+  profile: z.object({ profileId: z.string().min(1), profileVersion: z.number().int().positive() }).optional(),
+  version: z.number().int().positive(),
+  updatedAt: z.number(),
+  lastCommandId: z.string().min(1),
+})
+
+const workspaceDefaultApplicationSchema = z.object({
+  schemaVersion: z.literal(1),
+  sessionId: z.string().min(1),
+  sessionCreatedAt: z.number().int().nonnegative(),
+  workspacePath: z.string().min(1),
+  workspaceDefaultVersion: z.number().int().positive(),
+  sourceIds: z.array(z.string()),
+  profileApplied: z.boolean(),
+  appliedAt: z.number(),
+})
+
 const outlineItemSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -348,6 +370,8 @@ export const studyDomain = defineDomain({
   tables: {
     sources: domainTable<SourceId, z.infer<typeof sourceRecordSchema>>(z.union([sourceRecordSchema, legacySourceRecordSchema]) as unknown as z.ZodType<z.infer<typeof sourceRecordSchema>>),
     source_access: domainTable<string, z.infer<typeof sourceAccessRecordSchema>>(sourceAccessRecordSchema),
+    workspace_defaults: domainTable<string, z.infer<typeof workspaceDefaultRecordSchema>>(workspaceDefaultRecordSchema),
+    workspace_default_applications: domainTable<string, z.infer<typeof workspaceDefaultApplicationSchema>>(workspaceDefaultApplicationSchema),
     revisions: domainTable<RevisionId, z.infer<typeof revisionRecordSchema>>(z.union([revisionRecordSchema, legacyRevisionRecordSchema]) as unknown as z.ZodType<z.infer<typeof revisionRecordSchema>>),
     imports: domainTable<ImportId, z.infer<typeof importRecordSchema>>(importRecordSchema),
     extraction_artifact_sets: domainTable<ExtractionArtifactSetId, z.infer<typeof extractionArtifactSetRecordSchema>>(extractionArtifactSetRecordSchema),
@@ -386,6 +410,8 @@ export {
   revisionRecordSchema,
   sourceRecordSchema,
   sourceAccessRecordSchema,
+  workspaceDefaultRecordSchema,
+  workspaceDefaultApplicationSchema,
   studyEventRecordSchema,
   managementFolderSchema,
   managementGrantSchema,

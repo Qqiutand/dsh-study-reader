@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AssetFolderView, AssetNamespace, InjectionProfileRecord, InjectionStudioSnapshot, PromptBinding, ProfileSkillBinding, StudioAssetSummary, ToolPolicyBinding } from '../../studio/types.ts'
-import type { ToolDescriptorView } from '../../study/types.ts'
+import type { ToolDescriptorView, WorkspaceDefaultView } from '../../study/types.ts'
 import type { StudyRemote } from '../remote.ts'
 import { useBilingualText, type BilingualText } from '../StudyLocale.tsx'
 
@@ -16,6 +16,7 @@ export function OverviewDashboard(props: { readonly sessionId: string; readonly 
   const [documents, setDocuments] = useState<readonly StudioAssetSummary[]>([])
   const [skillAssets, setSkillAssets] = useState<readonly StudioAssetSummary[]>([])
   const [folders, setFolders] = useState<readonly AssetFolderView[]>([])
+  const [workspaceDefault, setWorkspaceDefault] = useState<WorkspaceDefaultView>()
   const [busyKey, setBusyKey] = useState<string>()
   const [message, setMessage] = useState<string>()
   const [saveOpen, setSaveOpen] = useState(false)
@@ -23,6 +24,11 @@ export function OverviewDashboard(props: { readonly sessionId: string; readonly 
 
   const load = useCallback(async (): Promise<void> => {
     if (props.studyRemote === undefined) return
+    // The Host imports a Workspace default through this call. Finish it before
+    // reading the document list so a newly opened conversation never renders a
+    // stale empty selection from a racing request.
+    const workspaceDefaultResult = await props.studyRemote.getWorkspaceDefault({ sessionId: props.sessionId })
+    if (!workspaceDefaultResult.ok) throw new Error(workspaceDefaultResult.error.message)
     const [studioResult, toolResult, documentResult, skillResult, folderResult] = await Promise.all([
       props.studyRemote.studioSnapshot({ sessionId: props.sessionId }),
       props.studyRemote.listToolCatalog({ sessionId: props.sessionId }),
@@ -34,7 +40,7 @@ export function OverviewDashboard(props: { readonly sessionId: string; readonly 
     if (!toolResult.ok) throw new Error(toolResult.error.message)
     if (!documentResult.ok) throw new Error(documentResult.error.message)
     if (!skillResult.ok) throw new Error(skillResult.error.message)
-    setStudio(studioResult.value); setTools(toolResult.value); setDocuments(documentResult.value.assets); setSkillAssets(skillResult.value.assets); setFolders(folderResult)
+    setStudio(studioResult.value); setTools(toolResult.value); setDocuments(documentResult.value.assets); setSkillAssets(skillResult.value.assets); setFolders(folderResult); setWorkspaceDefault(workspaceDefaultResult.value)
     const binding = studioResult.value.binding
     if (binding === undefined) { setProfile(undefined); return }
     const detail = await props.studyRemote.getAssetDetail({ sessionId: props.sessionId, kind: 'profile', assetId: binding.profileId })
@@ -129,6 +135,46 @@ export function OverviewDashboard(props: { readonly sessionId: string; readonly 
     finally { setBusyKey(undefined) }
   }
 
+  const saveAsWorkspaceDefault = async (): Promise<void> => {
+    if (props.studyRemote === undefined || workspaceDefault?.available !== true) return
+    setBusyKey('workspace-default'); setMessage(undefined)
+    try {
+      const result = await props.studyRemote.saveWorkspaceDefault({
+        sessionId: props.sessionId,
+        commandId: commandId('save-workspace-default'),
+        expectedVersion: workspaceDefault.version,
+      })
+      if (!result.ok) throw new Error(result.error.message)
+      setWorkspaceDefault(result.value)
+      if (result.value.available) {
+        const folder = workspaceFolderName(result.value.workspacePath)
+        setMessage(b(`已将当前文献和配置保存为“${folder}”的新会话默认；已有会话不变。`, `Saved the current documents and configuration as the new-session default for “${folder}”. Existing conversations are unchanged.`))
+      }
+      props.onChanged()
+    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)) }
+    finally { setBusyKey(undefined) }
+  }
+
+  const clearWorkspaceDefault = async (): Promise<void> => {
+    if (props.studyRemote === undefined || workspaceDefault?.available !== true || !workspaceDefault.active) return
+    setBusyKey('workspace-default-clear'); setMessage(undefined)
+    try {
+      const result = await props.studyRemote.clearWorkspaceDefault({
+        sessionId: props.sessionId,
+        commandId: commandId('clear-workspace-default'),
+        expectedVersion: workspaceDefault.version,
+      })
+      if (!result.ok) throw new Error(result.error.message)
+      setWorkspaceDefault(result.value)
+      if (result.value.available) {
+        const folder = workspaceFolderName(result.value.workspacePath)
+        setMessage(b(`已取消“${folder}”的工作区默认；已有会话不变。`, `Removed the Workspace default for “${folder}”. Existing conversations are unchanged.`))
+      }
+      props.onChanged()
+    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)) }
+    finally { setBusyKey(undefined) }
+  }
+
   const cards = [
     { id: 'documents' as const, label: b('对话资料', 'Conversation documents'), count: visibleDocuments.length, hint: b('本次对话可以查阅的文献', 'Documents available to this conversation') },
     { id: 'skills' as const, label: 'Skills', count: enabledSkills.length, hint: b('本次对话可按需使用的专项方法', 'Specialized methods available on demand') },
@@ -137,6 +183,7 @@ export function OverviewDashboard(props: { readonly sessionId: string; readonly 
   ]
   return <main className="dsh-overview"><header><div><p>{b('总览', 'Overview')}</p><h1>{b('本次对话正在使用什么', 'What this conversation can use')}</h1><span>{binding === undefined ? b('正在使用系统内置的默认预设；下面列出的提示、Skills 和 Tools 均已实际生效。', 'The built-in default preset is active. The prompts, Skills, and Tools below are in effect.') : b('这里只列出当前预设中已经生效的内容。', 'Only active items from the current preset are shown.')}</span></div><div className="dsh-overview-header-actions"><button type="button" onClick={() => { setSaveName(profile === undefined ? b('默认预设副本', 'Default preset copy') : b(`${profile.name} 副本`, `${profile.name} copy`)); setSaveOpen(true) }}>{b('保存为配置预设', 'Save as preset')}</button><button type="button" onClick={() => props.onNavigate('profiles')}>{binding === undefined ? b('默认预设 · 系统内置', 'Default preset · built in') : profile?.name ?? b('当前预设', 'Current preset')}</button></div></header>
     {message === undefined ? null : <p className="dsh-overview-message" role="status">{message}</p>}
+    {workspaceDefault?.available === true ? <section className="dsh-overview-workspace-default" aria-label={b('工作区默认', 'Workspace default')}><div><strong>{b('新会话默认', 'New-session default')}</strong><span title={workspaceDefault.workspacePath}>{workspaceFolderName(workspaceDefault.workspacePath)}</span><p>{workspaceDefault.active ? b(`已保存 ${workspaceDefault.sourceCount} 篇文献 · ${workspaceDefault.profileName ?? '系统默认配置'}。新会话只导入一次，之后可单独调整。`, `Saved ${workspaceDefault.sourceCount} documents · ${workspaceDefault.profileName ?? 'built-in configuration'}. New conversations import it once and can then be adjusted independently.`) : b('把当前勾选的文献和当前配置保存给这个文件夹以后新建的会话。', 'Save the currently selected documents and configuration for future conversations in this folder.')}</p></div><div><button type="button" title={workspaceDefault.workspacePath} disabled={busyKey !== undefined || workspaceDefault.matchesCurrent} onClick={() => void saveAsWorkspaceDefault()}>{busyKey === 'workspace-default' ? b('保存中…', 'Saving…') : workspaceDefault.matchesCurrent ? b('当前已是默认', 'Already the default') : workspaceDefault.active ? b('更新工作区默认', 'Update Workspace default') : b('设为当前工作区默认', 'Set as Workspace default')}</button>{workspaceDefault.active ? <button type="button" className="dsh-overview-workspace-default-clear" disabled={busyKey !== undefined} onClick={() => void clearWorkspaceDefault()}>{busyKey === 'workspace-default-clear' ? b('取消中…', 'Removing…') : b('取消默认', 'Remove default')}</button> : null}</div></section> : null}
     <div className="dsh-overview-metrics">{cards.map(card => <button type="button" key={card.id} aria-pressed={category === card.id} onClick={() => setCategory(card.id)}><strong>{card.count}</strong><span>{card.label}</span><small>{card.hint}</small></button>)}</div>
     <section className="dsh-overview-panel" aria-label={cards.find(card => card.id === category)?.label}><header><div><h2>{cards.find(card => card.id === category)?.label}</h2><p>{cards.find(card => card.id === category)?.hint}</p></div><button type="button" onClick={() => props.onNavigate(category === 'documents' ? 'library' : category === 'rules' ? 'prompts' : category)}>{b('查看全部', 'View all')}</button></header>
       <div className="dsh-overview-items">
@@ -149,6 +196,12 @@ export function OverviewDashboard(props: { readonly sessionId: string; readonly 
     </section>
     {saveOpen ? <div className="dsh-overview-dialog-backdrop" role="presentation"><section className="dsh-overview-dialog" role="dialog" aria-modal="true" aria-labelledby="dsh-save-profile-title"><h2 id="dsh-save-profile-title">{b('保存当前设置', 'Save current settings')}</h2><p>{b('保存提示词注入、Skills 和 Tools；不会保存文献、阅读位置或服务连接，也不会切换当前对话。', 'Saves prompt injections, Skills, and Tools. Documents, reading position, connections, and the active conversation are unchanged.')}</p><label>{b('预设名称', 'Preset name')}<input autoFocus value={saveName} maxLength={120} onChange={event => setSaveName(event.currentTarget.value)} /></label><div><button type="button" onClick={() => { setSaveOpen(false); setSaveName('') }}>{b('取消', 'Cancel')}</button><button type="button" disabled={busyKey === 'save-profile' || saveName.trim() === ''} onClick={() => void saveCurrentConfiguration()}>{busyKey === 'save-profile' ? b('保存中…', 'Saving…') : b('保存', 'Save')}</button></div></section></div> : null}
   </main>
+}
+
+function workspaceFolderName(workspacePath: string): string {
+  const normalized = workspacePath.replace(/[\\/]+$/u, '')
+  const segment = normalized.split(/[\\/]/u).at(-1)
+  return segment === undefined || segment === '' ? workspacePath : segment
 }
 
 function OverviewRow(props: { readonly icon: string; readonly title: string; readonly description: string; readonly location: string; readonly enabled: boolean; readonly enabledText?: string; readonly busy?: boolean; readonly locked?: boolean; readonly lockedText?: string; readonly onToggle?: (enabled: boolean) => void; readonly b?: BilingualText }) {

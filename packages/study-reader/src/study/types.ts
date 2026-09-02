@@ -180,6 +180,64 @@ export interface SourceAccessRecord {
   readonly grantedAt: number
 }
 
+/** Durable snapshot imported once into new top-level sessions in one DSH Workspace. */
+export interface WorkspaceDefaultRecord {
+  readonly schemaVersion: 1
+  /** Canonical SessionHeader.cwd supplied by the Host Workspace registry. */
+  readonly workspacePath: string
+  readonly active: boolean
+  /** Exact document grants captured from the source conversation. */
+  readonly sourceIds: readonly SourceId[]
+  /** Exact immutable Profile revision captured from the source conversation. */
+  readonly profile?: {
+    readonly profileId: string
+    readonly profileVersion: number
+  }
+  readonly version: number
+  readonly updatedAt: number
+  readonly lastCommandId: string
+}
+
+/** One-shot receipt preventing later Bookroom reads from reapplying a Workspace default. */
+export interface WorkspaceDefaultApplicationRecord {
+  readonly schemaVersion: 1
+  readonly sessionId: string
+  readonly sessionCreatedAt: number
+  readonly workspacePath: string
+  readonly workspaceDefaultVersion: number
+  readonly sourceIds: readonly SourceId[]
+  readonly profileApplied: boolean
+  readonly appliedAt: number
+}
+
+/** Browser-safe state of the current Session's owning Workspace default. */
+export type WorkspaceDefaultView =
+  | { readonly available: false }
+  | {
+      readonly available: true
+      readonly workspacePath: string
+      readonly active: boolean
+      readonly version: number
+      readonly sourceCount: number
+      readonly profileName?: string
+      readonly matchesCurrent: boolean
+      readonly updatedAt?: number
+    }
+
+/** CAS-guarded capture of the current conversation as its Workspace's future default. */
+export interface SaveWorkspaceDefaultRequest {
+  readonly sessionId: string
+  readonly commandId: string
+  readonly expectedVersion: number
+}
+
+/** CAS-guarded removal of the current Workspace's future default. */
+export interface ClearWorkspaceDefaultRequest {
+  readonly sessionId: string
+  readonly commandId: string
+  readonly expectedVersion: number
+}
+
 /** One parsed revision of a source; heavy content lives in content-addressed blobs. */
 export interface RevisionRecord {
   readonly id: RevisionId

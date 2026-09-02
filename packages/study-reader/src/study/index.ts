@@ -21,7 +21,7 @@ import { StudyPoller } from './poller.ts'
 import { migrateLegacyImports } from './import-migration.ts'
 import type { PollerConfig } from './poller.ts'
 import { StudyService, type StudyServiceConfig } from './study-service.ts'
-import type { ArtifactId, ArtifactRecord, DossierId, DossierRecord, ExtractionArtifactSetId, ExtractionArtifactSetRecord, ImportId, ImportRecord, ReprocessOperationId, ReprocessOperationRecord, RevisionId, RevisionRecord, SourceAccessRecord, SourceId, SourceRecord, StudyEventRecord } from './types.ts'
+import type { ArtifactId, ArtifactRecord, DossierId, DossierRecord, ExtractionArtifactSetId, ExtractionArtifactSetRecord, ImportId, ImportRecord, ReprocessOperationId, ReprocessOperationRecord, RevisionId, RevisionRecord, SourceAccessRecord, SourceId, SourceRecord, StudyEventRecord, WorkspaceDefaultApplicationRecord, WorkspaceDefaultRecord } from './types.ts'
 import type { AgentGrant, ManagementCommandRecord, ManagementDeletionOperation, ManagementFolder, ManagementProposal, SourceLocation, StudySkill } from './management.ts'
 import type { AssetFolderRecord, InjectionProfileRecord, InjectionStudioCommandReceipt, PromptAssetRecord, ProviderConnectionCommandReceipt, ProviderConnectionRecord, SessionInjectionBinding } from '../studio/types.ts'
 import { applyCompiledInjection } from '../studio/runtime-injection.ts'
@@ -262,6 +262,8 @@ export async function apply(ctx: Context, config: StudyConfig): Promise<void> {
     memory: ctx.studyMemory,
     sources: domain.table('sources') as unknown as KvTable<SourceId, SourceRecord>,
     sourceAccess: domain.table('source_access') as unknown as KvTable<string, SourceAccessRecord>,
+    workspaceDefaults: domain.table('workspace_defaults') as unknown as KvTable<string, WorkspaceDefaultRecord>,
+    workspaceDefaultApplications: domain.table('workspace_default_applications') as unknown as KvTable<string, WorkspaceDefaultApplicationRecord>,
     revisions: domain.table('revisions') as unknown as KvTable<RevisionId, RevisionRecord>,
     imports: domain.table('imports') as unknown as KvTable<ImportId, ImportRecord>,
     artifactSets: domain.table('extraction_artifact_sets') as unknown as KvTable<ExtractionArtifactSetId, ExtractionArtifactSetRecord>,
@@ -302,6 +304,13 @@ export async function apply(ctx: Context, config: StudyConfig): Promise<void> {
   // the same Reader Profile/intent policy before either reaches the model.
   // Non-Reader Skills remain wholly owned by their native providers.
   ctx.on('agent/pre-step', async ({ agent, signal }, next): Promise<PreStepDecision> => {
+    try {
+      await service.ensureWorkspaceDefaultForSession(String(agent.id))
+    } catch (error) {
+      // A convenience template must never prevent an otherwise valid turn.
+      // Bookroom surfaces the same persistence failure when the user opens it.
+      ctx.logger.warn(`study: could not apply Workspace default to Session "${String(agent.id)}": ${String(error)}`)
+    }
     const decision = await next()
     if (decision.kind === 'reject') return decision
 

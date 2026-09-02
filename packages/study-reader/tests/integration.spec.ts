@@ -40,6 +40,88 @@ describe('study reader keyless e2e', () => {
     expect(snapshot.sources.some(source => source.id === 'src-page-000')).toBe(false)
     expect(snapshot.selectedSource).toMatchObject({ id: 'src-page-000', revisionId: 'rev-page-000', granted: true })
   })
+
+  it('imports a folder default into each new top-level conversation exactly once', async () => {
+    const first = await setup()
+    const { ctx, agents, root } = first
+    const deps = (ctx.study as unknown as { deps: any }).deps
+    const workspacePath = '/workspace/research-project'
+    const templateSession = 'workspace-template'
+    agents.configureSession(templateSession, { createdAt: 1, cwd: workspacePath })
+
+    const blob = `sha256/${'c'.repeat(64)}`
+    for (const index of [1, 2]) {
+      const sourceId = `workspace-source-${index}`
+      const revisionId = `workspace-revision-${index}`
+      await deps.sources.put(sourceId, { id: sourceId, title: `Workspace source ${index}`, displayTitle: `Workspace source ${index}`, authors: [], originalFileName: `source-${index}.pdf`, kind: 'document', format: 'pdf', currentRevisionId: revisionId, createdAt: index, updatedAt: index })
+      await deps.revisions.put(revisionId, { id: revisionId, sourceId, providerId: 'fixture', providerKind: 'fixture', providerModel: 'fixture', format: 'pdf', blockCount: 0, markdownBlob: blob, blocksBlob: blob, outline: [], sha256: 'd'.repeat(64), createdAt: index })
+      await ctx.study.setSourceAccessForClient({ sessionId: templateSession, sourceId, granted: true })
+    }
+    const profile = (await ctx.study.executeStudioCommandForClient({
+      sessionId: templateSession,
+      commandId: 'workspace-profile-create',
+      command: { kind: 'create-profile', name: 'Careful reading', description: '', promptBindings: [], skillBindings: [], toolPolicies: [], modelPolicy: { kind: 'inherit-session' } },
+    })).profile!
+    await ctx.study.executeStudioCommandForClient({
+      sessionId: templateSession,
+      commandId: 'workspace-profile-activate',
+      command: { kind: 'activate-profile', profileId: profile.id, profileVersion: profile.currentVersion, expectedBindingVersion: 0 },
+    })
+
+    expect(await ctx.study.getWorkspaceDefaultForClient({ sessionId: templateSession })).toMatchObject({ available: true, active: false, workspacePath, version: 0 })
+    const saved = await ctx.study.saveWorkspaceDefaultForClient({ sessionId: templateSession, commandId: 'workspace-default-save', expectedVersion: 0 })
+    expect(saved).toMatchObject({ available: true, active: true, sourceCount: 2, profileName: 'Careful reading', matchesCurrent: true, version: 1 })
+    await expect(ctx.study.executeStudioCommandForClient({
+      sessionId: templateSession,
+      commandId: 'workspace-profile-archive-protected',
+      command: { kind: 'archive-profile', profileId: profile.id, expectedRecordVersion: profile.recordVersion, archived: true },
+    })).rejects.toMatchObject({ code: 'INJECTION_PROFILE_IN_WORKSPACE_DEFAULT' })
+
+    const newSession = 'workspace-new-session'
+    agents.configureSession(newSession, { createdAt: Number.MAX_SAFE_INTEGER, cwd: workspacePath })
+    expect(await ctx.study.ensureWorkspaceDefaultForSession(newSession)).toBe(true)
+    expect(ctx.study.listSourcesForClient({ scope: 'session', sessionId: newSession }).map(source => source.id).sort()).toEqual(['workspace-source-1', 'workspace-source-2'])
+    const importedBinding = (await ctx.study.studioSnapshotForClient({ sessionId: newSession })).binding!
+    expect(importedBinding).toMatchObject({ profileId: profile.id, profileVersion: profile.currentVersion })
+
+    await ctx.study.setSourceAccessForClient({ sessionId: newSession, sourceId: 'workspace-source-2', granted: false })
+    await ctx.study.executeStudioCommandForClient({
+      sessionId: newSession,
+      commandId: 'workspace-profile-independent',
+      command: { kind: 'deactivate-profile', expectedBindingVersion: importedBinding.recordVersion },
+    })
+    const updated = await ctx.study.saveWorkspaceDefaultForClient({ sessionId: templateSession, commandId: 'workspace-default-update', expectedVersion: 1 })
+    expect(updated).toMatchObject({ version: 2 })
+    expect(await ctx.study.ensureWorkspaceDefaultForSession(newSession)).toBe(false)
+    expect(ctx.study.listSourcesForClient({ scope: 'session', sessionId: newSession }).map(source => source.id)).toEqual(['workspace-source-1'])
+    expect((await ctx.study.studioSnapshotForClient({ sessionId: newSession })).binding).toBeUndefined()
+
+    const oldSession = 'workspace-old-session'
+    agents.configureSession(oldSession, { createdAt: 0, cwd: workspacePath })
+    expect(await ctx.study.ensureWorkspaceDefaultForSession(oldSession)).toBe(false)
+    expect(ctx.study.listSourcesForClient({ scope: 'session', sessionId: oldSession })).toEqual([])
+
+    const subagentSession = 'workspace-subagent-session'
+    agents.configureSession(subagentSession, { createdAt: Number.MAX_SAFE_INTEGER, cwd: workspacePath, origin: 'subagent' })
+    expect(await ctx.study.ensureWorkspaceDefaultForSession(subagentSession)).toBe(false)
+    expect(ctx.study.listSourcesForClient({ scope: 'session', sessionId: subagentSession })).toEqual([])
+
+    const forkSession = 'workspace-fork-session'
+    agents.configureSession(forkSession, { createdAt: Number.MAX_SAFE_INTEGER, cwd: workspacePath, parentSession: templateSession })
+    expect(await ctx.study.ensureWorkspaceDefaultForSession(forkSession)).toBe(false)
+    expect(ctx.study.listSourcesForClient({ scope: 'session', sessionId: forkSession })).toEqual([])
+
+    await first.dispose(false)
+    const restarted = await setupStudy({}, {}, root); harnesses.push(restarted)
+    const restartedSession = 'workspace-after-restart'
+    restarted.agents.configureSession(restartedSession, { createdAt: Number.MAX_SAFE_INTEGER, cwd: workspacePath })
+    expect(await restarted.ctx.study.ensureWorkspaceDefaultForSession(restartedSession)).toBe(true)
+    expect(restarted.ctx.study.listSourcesForClient({ scope: 'session', sessionId: restartedSession }).map(source => source.id).sort()).toEqual(['workspace-source-1', 'workspace-source-2'])
+    expect((await restarted.ctx.study.studioSnapshotForClient({ sessionId: restartedSession })).binding).toMatchObject({ profileId: profile.id, profileVersion: profile.currentVersion })
+    await restarted.ctx.study.deleteSourceForClient({ sessionId: restartedSession, sourceId: 'workspace-source-2', expectedTitle: 'Workspace source 2' })
+    expect(await restarted.ctx.study.getWorkspaceDefaultForClient({ sessionId: restartedSession })).toMatchObject({ active: true, sourceCount: 1 })
+  })
+
   it('fails closed for disabled management while retaining ordinary uploads', async () => {
     const { ctx } = await setup({ managementControlMode: 'disabled' })
     ;(ctx.study as unknown as { deps: { config: { managementControlMode: 'disabled' } } }).deps.config.managementControlMode = 'disabled'

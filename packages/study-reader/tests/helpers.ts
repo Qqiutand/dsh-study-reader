@@ -65,6 +65,12 @@ export class TestCredentials extends CredentialProvider {
 export interface TestAgent {
   readonly id: string
   readonly session: {
+    readonly header: {
+      readonly createdAt: number
+      readonly cwd?: string
+      readonly parentSession?: string
+      readonly origin?: 'subagent'
+    }
     readonly events: readonly { readonly type: string; readonly data: Record<string, unknown> }[]
     requestHeader(): { config: { provider: string; model: string } }
   }
@@ -77,6 +83,7 @@ export class TestAgents extends Service {
   readonly followups = new Map<string, UserMessage[]>()
   private initiatorId: string | undefined
   private readonly sessionEvents = new Map<string, Array<{ type: string; data: Record<string, unknown> }>>()
+  private readonly sessionHeaders = new Map<string, TestAgent['session']['header']>()
   private readonly agentObjects = new Map<string, TestAgent>()
 
   constructor(ctx: Context) {
@@ -110,6 +117,15 @@ export class TestAgents extends Service {
     this.sessionEvents.set(id, events)
   }
 
+  /** Configure the live Session identity used by Workspace-scoped behavior. */
+  configureSession(id: string, header: TestAgent['session']['header']): void {
+    this.sessionHeaders.set(id, header)
+    const existing = this.agentObjects.get(id)
+    if (existing !== undefined) {
+      (existing.session as { header: TestAgent['session']['header'] }).header = header
+    }
+  }
+
   get(id: string): TestAgent {
     const existing = this.agentObjects.get(id)
     if (existing !== undefined) return existing
@@ -118,6 +134,7 @@ export class TestAgents extends Service {
     const agent: TestAgent = {
       id,
       session: {
+        header: this.sessionHeaders.get(id) ?? { createdAt: 0, cwd: '/workspace' },
         events,
         requestHeader: () => ({ config: { provider: 'selected-provider', model: 'selected-model' } }),
       },
