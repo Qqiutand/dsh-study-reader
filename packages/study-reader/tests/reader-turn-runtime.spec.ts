@@ -93,6 +93,31 @@ describe('ReaderTurnManager', () => {
     expect(nextTurn.contextAddon).not.toContain('/reader-unbounded')
   })
 
+  it('rebuilds a provisional pre-step view when the command task message is committed', async () => {
+    const events: Array<{ type: string; data: unknown }> = [
+      { type: 'turn/start', data: { turn: 1 } },
+      { type: 'step/start', data: { turn: 1, step: 1 } },
+    ]
+    const current = agent(events)
+    const manager = new ReaderTurnManager({
+      createHost: () => host(),
+      resolveProfile: async () => ({ maxToolCallsPerTurn: 2, maxToolAttemptsPerTurn: 3 }),
+      resolveSkillId: () => undefined,
+    })
+
+    const provisional = await manager.view(current)
+    expect(provisional.toolCallLimit).toBe('bounded')
+    expect(provisional.contextAddon).not.toContain('/reader-unbounded')
+
+    // This is the real DSH ordering: pre-step consumers may run before the
+    // inbox message is durably appended to the already-open turn.
+    events.push(unboundedUserMessage('完整阅读并综合这些文献。'))
+
+    const admitted = await manager.view(current)
+    expect(admitted.toolCallLimit).toBe('unbounded')
+    expect(admitted.contextAddon).toContain('/reader-unbounded')
+  })
+
   it('keeps all core read tools visible and injects every conversation document without private ids', async () => {
     const current = agent([
       { type: 'turn/start', data: { turn: 1 } },

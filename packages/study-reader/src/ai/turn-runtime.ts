@@ -98,6 +98,13 @@ function directUserText(events: readonly SessionLikeEvent[]): string {
   }).filter(Boolean).join('\n')
 }
 
+function hasDirectUserRequest(events: readonly SessionLikeEvent[]): boolean {
+  return events.some(event => {
+    if (event.type !== 'user/message') return false
+    return plainRecord(plainRecord(event.data)?.source)?.kind === 'user'
+  })
+}
+
 function hasReaderUnboundedRequest(events: readonly SessionLikeEvent[]): boolean {
   return events.some(event => event.type === 'user/message' && isReaderUnboundedUserMessage(event.data))
 }
@@ -169,6 +176,7 @@ export interface ReaderSkillEligibility {
 export class ReaderTurnManager {
   private readonly states = new WeakMap<Agent, Promise<ReaderTurnState>>()
   private readonly stateTurns = new WeakMap<Agent, number>()
+  private readonly stateHasDirectUserRequest = new WeakMap<Agent, boolean>()
   private readonly registry = new ReaderToolRegistry(createReaderToolSpecs())
 
   constructor(private readonly dependencies: ReaderTurnDependencies) {}
@@ -249,10 +257,20 @@ export class ReaderTurnManager {
     const slice = currentTurnSlice(agent)
     if (slice === undefined) throw new Error('Reader runtime requires an open DSH turn')
     const existing = this.states.get(agent)
-    if (existing !== undefined && this.stateTurns.get(agent) === slice.turn) return existing
+    const hasDirectRequest = hasDirectUserRequest(slice.events)
+    if (existing !== undefined && this.stateTurns.get(agent) === slice.turn) {
+      // DSH may ask pre-step providers for Skill eligibility after turn/start
+      // but before it commits the inbox user/message. That first view is only
+      // provisional: rebuild it once the direct request arrives so command
+      // metadata and user intent participate in the authoritative prompt and
+      // Tool policy. Never rebuild a state that has already admitted a direct
+      // request, because doing so could reset its ToolCallGuard mid-turn.
+      if (this.stateHasDirectUserRequest.get(agent) === true || !hasDirectRequest) return existing
+    }
     const created = this.createState(agent, slice.turn, slice.events, signal)
     this.states.set(agent, created)
     this.stateTurns.set(agent, slice.turn)
+    this.stateHasDirectUserRequest.set(agent, hasDirectRequest)
     return created
   }
 

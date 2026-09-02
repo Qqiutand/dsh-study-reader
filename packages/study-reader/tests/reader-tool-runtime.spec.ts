@@ -98,7 +98,10 @@ describe('Reader Tool runtime policy', () => {
     expect((await runtime.execute('reader_list_documents', { query: 'Book' }, signal)).status).toBe('success')
     expect((await runtime.execute('reader_search_passages', { query: 'first', scope: { kind: 'conversation' } }, signal)).status).toBe('empty')
     expect(await runtime.execute('reader_search_passages', { query: 'blocked discovery', scope: { kind: 'conversation' } }, signal))
-      .toMatchObject({ status: 'error', error: { code: 'CALL_BUDGET_EXCEEDED', message: expect.stringContaining('请使用已有') } })
+      .toMatchObject({ status: 'error', error: {
+        code: 'CALL_BUDGET_EXCEEDED',
+        message: expect.stringContaining('正文读取也有保留次数限制'),
+      } })
     expect((await runtime.execute('reader_read_passage', { target: { kind: 'passage_ref', passageRef: 'passage_1' }, window: 0 }, signal)).status).toBe('success')
     expect((await runtime.execute('reader_read_passage', { target: { kind: 'passage_ref', passageRef: 'passage_1' }, window: 1 }, signal)).status).toBe('success')
     expect(await runtime.execute('reader_read_passage', { target: { kind: 'passage_ref', passageRef: 'passage_1' }, window: 2 }, signal))

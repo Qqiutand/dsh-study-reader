@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.9 - 2026-09-02
+
+- Fixed `/reader-unbounded` command turns being cached as bounded when DSH queried pre-step Skill eligibility before committing the queued user message.
+- Clarified bounded shared-budget errors so the model cannot infer that passage reads are unlimited after discovery calls exhaust the shared allowance.
+
 ## 0.5.8 - 2026-09-02
 
 - Added `/reader-unbounded <task>` for a single complex Reader task without per-turn tool-call or attempt-count limits; the next ordinary message automatically returns to the configured bounded policy.

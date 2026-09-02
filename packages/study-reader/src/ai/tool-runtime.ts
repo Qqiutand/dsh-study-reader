@@ -74,7 +74,7 @@ export class ToolCallGuard {
         ? '本轮已经完成两次正文读取，请使用已返回的正文作答'
         : spec.name === 'reader_save_note'
           ? '本轮已经执行一次笔记保存，不再重复写入'
-          : '本轮检索预算已经达到上限；请使用已有目录、检索片段和正文作答，不要继续检索'
+          : '本轮 Reader 共享调用预算已经达到上限；正文读取也有保留次数限制。请使用已有目录、检索片段和正文作答，不要继续调用检索等发现工具'
       return toolResult.error('CALL_BUDGET_EXCEEDED', message)
     }
     this.signatures.add(signature); this.completedCalls += 1; this.callsByTool.set(spec.name, current + 1)
