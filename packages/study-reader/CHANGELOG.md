@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 - 2026-09-02
+
+- Made document titles in the compact conversation shelf open the existing Bookroom preview without changing conversation access; the adjacent Remove action remains independent.
+
 ## 0.6.0 - 2026-09-02
 
 - Added a per-folder Workspace default on the Bookroom Overview. It snapshots the current conversation's document grants and pinned Reader configuration for future top-level conversations in the same DSH working directory.

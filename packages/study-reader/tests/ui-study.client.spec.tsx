@@ -53,6 +53,15 @@ describe('lightweight library workspace', () => {
     expect(screen.queryByLabelText('在本文中查找')).toBeNull()
     expect(api.search).not.toHaveBeenCalled()
   })
+  it('opens a preview from the compact conversation shelf without changing access', async () => {
+    const api=remote(); render(<ReadingWorkspace studyRemote={api} sessionId="s" />)
+    fireEvent.click(await screen.findByRole('button',{name:'预览《Book》'}))
+    await waitFor(()=>expect(api.getSourcePreview).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('bounded')).toBeDefined()
+    expect(api.getSourcePreview.mock.calls[0]![0]).toMatchObject({sessionId:'s',sourceId:'src',revisionId:'rev'})
+    expect(api.openSourceForSession).not.toHaveBeenCalled()
+    expect(api.setSourceAccess).not.toHaveBeenCalled()
+  })
   it('pages the Host library projection instead of capping the visible library at the bootstrap snapshot', async () => {
     const makeSource=(id:string,title:string)=>({id,title,recordVersion:1,kind:'book',format:'epub',revisionId:`rev-${id}`,granted:true})
     const first=Array.from({length:40},(_,index)=>makeSource(`src-${index}`,`Book ${index}`))
