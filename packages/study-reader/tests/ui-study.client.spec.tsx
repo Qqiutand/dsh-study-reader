@@ -2,6 +2,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ReadingWorkspace } from '../src/client/ReadingWorkspace.tsx'
+import { READING_WORKSPACE_CSS } from '../src/client/ReadingWorkspace.css.ts'
 
 afterEach(() => { document.body.innerHTML = ''; vi.unstubAllGlobals() })
 async function documentButton(title: string): Promise<HTMLButtonElement> {
@@ -38,6 +39,11 @@ function remote(overrides: Record<string, unknown> = {}) { const api:any = {
 }); return api }
 
 describe('lightweight library workspace', () => {
+  it('reserves the flexible library height for document cards', () => {
+    expect(READING_WORKSPACE_CSS).toContain('grid-template-rows:auto clamp(88px,16vh,120px) minmax(0,1fr)')
+    expect(READING_WORKSPACE_CSS).toContain('.dsh-library-ai-shelf{min-height:0;max-height:none')
+    expect(READING_WORKSPACE_CSS).toContain('.dsh-library-notice{margin:0 0 10px')
+  })
   it('hydrates without writing selection or automatically opening a document', async () => {
     const api=remote({getSessionSourceSelection:vi.fn(async()=>({ok:true,value:{schemaVersion:1,sessionId:'s',sourceId:'src',revisionId:'rev',version:2,updatedAt:1}}))})
     render(<ReadingWorkspace studyRemote={api} sessionId="s" />); expect(await screen.findByRole('heading',{name:'选择一本文献'})).toBeDefined()

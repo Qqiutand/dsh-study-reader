@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2 - 2026-09-02
+
+- Rebalanced the Bookroom library column for normal-height browser windows: the search controls, import notice, and conversation shelf are more compact, while the full document-card list receives the remaining height and keeps its own scroll.
+
 ## 0.6.1 - 2026-09-02
 
 - Made document titles in the compact conversation shelf open the existing Bookroom preview without changing conversation access; the adjacent Remove action remains independent.
