@@ -48,7 +48,8 @@ import type {
   WorkspaceDefaultApplicationRecord, WorkspaceDefaultRecord, WorkspaceDefaultView,
   SaveWorkspaceDefaultRequest, ClearWorkspaceDefaultRequest,
   CreateExternalAccessRequest, CreateExternalAccessResult, ExternalAccessRecord,
-  ExternalAccessSnapshot, ExternalAccessView, RevokeExternalAccessRequest,
+  DeleteExternalReadingSetRequest, ExternalAccessSnapshot, ExternalAccessView, ExternalReadingSetRecord,
+  ExternalReadingSetView, RevokeExternalAccessRequest, SaveExternalReadingSetRequest,
 } from './types.ts'
 import { isStudyEventType } from '../protocol/events.ts'
 import type { CognitiveProbeOptionData } from '../protocol/events.ts'
@@ -63,7 +64,7 @@ import { compileToolDescription, schemaHash, STUDY_TOOL_SPECS } from '../tools/s
 import { compileInjection } from '../studio/injection-compiler.ts'
 import { InjectionStudioRepository } from '../studio/repository.ts'
 import { ProviderConnectionRepository } from '../studio/provider-connections.ts'
-import { ExternalAccessManager, externalMcpServerName, externalTokenEnvironmentVariable } from './external-access.ts'
+import { ExternalAccessManager, externalMcpServerName, externalReadingSets, externalTokenEnvironmentVariable } from './external-access.ts'
 import { READER_TOOL_NAMES, type ReaderToolName } from '../ai/contracts.ts'
 import { STUDY_READER_SKILL_IDS, STUDY_READER_SKILLS, type StudyReaderSkillId } from '../ai/skill-catalog.ts'
 import { normalizeStudyReaderProfile, type SerializedStudyReaderProfile } from '../ai/turn-runtime.ts'
@@ -863,6 +864,25 @@ export class StudyService extends TypertRemoteService {
     }
   }
 
+  private externalReadingSetView(set: ExternalReadingSetRecord): ExternalReadingSetView {
+    const documentTitles: string[] = []
+    let missingDocumentCount = 0
+    for (const sourceId of set.sourceIds) {
+      const source = this.deps.sources.get(sourceId)
+      if (source === undefined) missingDocumentCount += 1
+      else documentTitles.push(source.displayTitle ?? source.title)
+    }
+    return {
+      setRef: set.setRef,
+      label: set.label,
+      sourceIds: set.sourceIds,
+      documentTitles,
+      missingDocumentCount,
+      createdAt: set.createdAt,
+      updatedAt: set.updatedAt,
+    }
+  }
+
   private externalAccessView(record: ExternalAccessRecord): ExternalAccessView {
     const documentTitles: string[] = []
     let missingDocumentCount = 0
@@ -878,6 +898,7 @@ export class StudyService extends TypertRemoteService {
       sourceIds: record.sourceIds,
       documentTitles,
       missingDocumentCount,
+      readingSets: externalReadingSets(record).map(set => this.externalReadingSetView(set)),
       state: this.deps.externalAccess.state(record),
       createdAt: record.createdAt,
       expiresAt: record.expiresAt,
@@ -906,26 +927,18 @@ export class StudyService extends TypertRemoteService {
     }
   }
 
-  /** Create one fixed document grant and reveal its bearer token exactly in this response. */
+  /** Create one stable client connection with its first named reading set. */
   @Remote('createExternalAccess')
   async createExternalAccessForClient(request: CreateExternalAccessRequest): Promise<CreateExternalAccessResult> {
     if (!this.deps.config.externalMcpEnabled) throw new StudyError('external MCP access is disabled', 'EXTERNAL_ACCESS_DISABLED')
     if (this.deps.config.managementControlMode !== 'trusted-local-user') throw new StudyError('local management control is disabled', 'MANAGEMENT_CONTROL_DISABLED')
     this.requireSessionId(request.sessionId, 'EXTERNAL_ACCESS_SESSION_REQUIRED')
-    if (!Array.isArray(request.sourceIds) || request.sourceIds.length < 1 || request.sourceIds.length > 100) {
-      throw new StudyError('external access requires 1 to 100 documents', 'EXTERNAL_ACCESS_SCOPE_INVALID')
-    }
-    const sourceIds = [...new Set(request.sourceIds.map(sourceId => sourceId.trim()).filter(sourceId => sourceId !== ''))] as SourceId[]
-    for (const sourceId of sourceIds) {
-      const source = this.deps.sources.get(sourceId)
-      if (source === undefined) throw new StudyError(`source "${sourceId}" not found`, 'SOURCE_NOT_FOUND')
-      this.resolveRevision(sourceId, source.currentRevisionId)
-      this.assertSourceDeletionNotAdmitted(sourceId)
-    }
+    const sourceIds = this.validateExternalSourceIds(request.sourceIds)
     const created = await this.deps.externalAccess.create({
       commandId: request.commandId,
       label: request.label,
       mcpServerName: request.mcpServerName,
+      readingSetLabel: request.readingSetLabel,
       sourceIds,
       expiresInDays: request.expiresInDays,
     })
@@ -941,6 +954,38 @@ export class StudyService extends TypertRemoteService {
     }
   }
 
+  /** Add or update one reading set without rotating the connection token. */
+  @Remote('saveExternalReadingSet')
+  async saveExternalReadingSetForClient(request: SaveExternalReadingSetRequest): Promise<ExternalAccessView> {
+    if (this.deps.config.managementControlMode !== 'trusted-local-user') throw new StudyError('local management control is disabled', 'MANAGEMENT_CONTROL_DISABLED')
+    this.requireSessionId(request.sessionId, 'EXTERNAL_ACCESS_SESSION_REQUIRED')
+    if (!Number.isInteger(request.expectedVersion) || request.expectedVersion < 1) throw new StudyError('external access version is invalid', 'EXTERNAL_ACCESS_VERSION_INVALID')
+    const sourceIds = this.validateExternalSourceIds(request.sourceIds)
+    const saved = await this.deps.externalAccess.saveSet({
+      accessId: request.accessId,
+      commandId: request.commandId,
+      expectedVersion: request.expectedVersion,
+      ...(request.setRef === undefined ? {} : { setRef: request.setRef }),
+      label: request.label,
+      sourceIds,
+    })
+    return this.externalAccessView(saved.record)
+  }
+
+  /** Delete one reading set while keeping the connection and its token active. */
+  @Remote('deleteExternalReadingSet')
+  async deleteExternalReadingSetForClient(request: DeleteExternalReadingSetRequest): Promise<ExternalAccessView> {
+    if (this.deps.config.managementControlMode !== 'trusted-local-user') throw new StudyError('local management control is disabled', 'MANAGEMENT_CONTROL_DISABLED')
+    this.requireSessionId(request.sessionId, 'EXTERNAL_ACCESS_SESSION_REQUIRED')
+    if (!Number.isInteger(request.expectedVersion) || request.expectedVersion < 1) throw new StudyError('external access version is invalid', 'EXTERNAL_ACCESS_VERSION_INVALID')
+    return this.externalAccessView(await this.deps.externalAccess.deleteSet({
+      accessId: request.accessId,
+      commandId: request.commandId,
+      expectedVersion: request.expectedVersion,
+      setRef: request.setRef,
+    }))
+  }
+
   /** Revoke an external connection immediately; existing document references stop resolving. */
   @Remote('revokeExternalAccess')
   async revokeExternalAccessForClient(request: RevokeExternalAccessRequest): Promise<ExternalAccessView> {
@@ -948,6 +993,21 @@ export class StudyService extends TypertRemoteService {
     this.requireSessionId(request.sessionId, 'EXTERNAL_ACCESS_SESSION_REQUIRED')
     if (!Number.isInteger(request.expectedVersion) || request.expectedVersion < 1) throw new StudyError('external access version is invalid', 'EXTERNAL_ACCESS_VERSION_INVALID')
     return this.externalAccessView(await this.deps.externalAccess.revoke(request.accessId, request.commandId, request.expectedVersion))
+  }
+
+  private validateExternalSourceIds(values: readonly string[]): SourceId[] {
+    if (!Array.isArray(values) || values.length < 1 || values.length > 100) {
+      throw new StudyError('a reading set requires 1 to 100 documents', 'EXTERNAL_SET_SCOPE_INVALID')
+    }
+    const sourceIds = [...new Set(values.map(sourceId => sourceId.trim()).filter(sourceId => sourceId !== ''))] as SourceId[]
+    if (sourceIds.length < 1) throw new StudyError('a reading set requires at least one document', 'EXTERNAL_SET_SCOPE_INVALID')
+    for (const sourceId of sourceIds) {
+      const source = this.deps.sources.get(sourceId)
+      if (source === undefined) throw new StudyError(`source "${sourceId}" not found`, 'SOURCE_NOT_FOUND')
+      this.resolveRevision(sourceId, source.currentRevisionId)
+      this.assertSourceDeletionNotAdmitted(sourceId)
+    }
+    return sourceIds
   }
 
   private workspaceIdentity(sessionId: string): { readonly workspacePath: string; readonly createdAt: number; readonly parentSession?: string; readonly origin?: 'subagent' } | undefined {
@@ -1850,12 +1910,22 @@ export class StudyService extends TypertRemoteService {
     return this.deps.externalAccess.requireActive(principalId)
   }
 
-  private externalSourceIds(principalId: string): ReadonlySet<SourceId> {
-    return new Set(this.assertExternalReaderPrincipal(principalId).sourceIds)
+  listExternalReadingSets(principalId: string): readonly ExternalReadingSetRecord[] {
+    this.assertExternalReaderPrincipal(principalId)
+    return this.deps.externalAccess.listSets(principalId)
   }
 
-  private externalEvidenceTarget(principalId: string, sourceId: SourceId): { readonly source: EvidenceSource; readonly revision: RevisionRecord } {
-    const allowed = this.externalSourceIds(principalId)
+  resolveExternalReadingSet(principalId: string, setRef?: string): ExternalReadingSetRecord {
+    this.assertExternalReaderPrincipal(principalId)
+    return this.deps.externalAccess.resolveSet(principalId, setRef)
+  }
+
+  private externalSourceIds(principalId: string, setRef?: string): ReadonlySet<SourceId> {
+    return new Set(this.resolveExternalReadingSet(principalId, setRef).sourceIds)
+  }
+
+  private externalEvidenceTarget(principalId: string, setRef: string | undefined, sourceId: SourceId): { readonly source: EvidenceSource; readonly revision: RevisionRecord } {
+    const allowed = this.externalSourceIds(principalId, setRef)
     if (!allowed.has(sourceId)) throw new StudyError('external connection cannot access this document', 'PERMISSION_DENIED')
     const source = this.deps.sources.get(sourceId)
     if (source === undefined) throw new StudyError(`source "${sourceId}" not found`, 'SOURCE_NOT_FOUND')
@@ -1872,29 +1942,29 @@ export class StudyService extends TypertRemoteService {
   }
 
   /** List only documents pinned into one browser-created external connection. */
-  async listSourcesForExternalPrincipal(principalId: string, query?: string, limit?: number): Promise<readonly SourceSummary[]> {
-    const allowed = this.externalSourceIds(principalId)
+  async listSourcesForExternalPrincipal(principalId: string, setRef: string | undefined, query?: string, limit?: number): Promise<readonly SourceSummary[]> {
+    const allowed = this.externalSourceIds(principalId, setRef)
     return this.listSourcesInScope(query, Number.MAX_SAFE_INTEGER, undefined, Number.MAX_SAFE_INTEGER)
       .filter(source => allowed.has(source.id))
       .slice(0, limit === undefined ? 100 : Math.min(Math.max(1, Math.floor(limit)), 100))
   }
 
   /** Return every currently readable document in one external connection. */
-  async listAllSourcesForExternalPrincipal(principalId: string): Promise<readonly SourceSummary[]> {
-    return await this.listSourcesForExternalPrincipal(principalId, undefined, 100)
+  async listAllSourcesForExternalPrincipal(principalId: string, setRef?: string): Promise<readonly SourceSummary[]> {
+    return await this.listSourcesForExternalPrincipal(principalId, setRef, undefined, 100)
   }
 
-  async sourceInfoForExternalPrincipal(principalId: string, sourceId: SourceId): Promise<EvidenceSource> {
-    return this.externalEvidenceTarget(principalId, sourceId).source
+  async sourceInfoForExternalPrincipal(principalId: string, setRef: string | undefined, sourceId: SourceId): Promise<EvidenceSource> {
+    return this.externalEvidenceTarget(principalId, setRef, sourceId).source
   }
 
-  async outlineForExternalPrincipal(principalId: string, sourceId: SourceId): Promise<EvidenceOutlineResult> {
-    const target = this.externalEvidenceTarget(principalId, sourceId)
+  async outlineForExternalPrincipal(principalId: string, setRef: string | undefined, sourceId: SourceId): Promise<EvidenceOutlineResult> {
+    const target = this.externalEvidenceTarget(principalId, setRef, sourceId)
     return { source: target.source, outline: target.revision.outline }
   }
 
-  async readForExternalPrincipal(principalId: string, input: { readonly sourceId: SourceId; readonly range: ReadRange; readonly cursor?: number }, maxChars: number): Promise<EvidenceReadResult> {
-    const target = this.externalEvidenceTarget(principalId, input.sourceId)
+  async readForExternalPrincipal(principalId: string, setRef: string | undefined, input: { readonly sourceId: SourceId; readonly range: ReadRange; readonly cursor?: number }, maxChars: number): Promise<EvidenceReadResult> {
+    const target = this.externalEvidenceTarget(principalId, setRef, input.sourceId)
     const result = await this.readPreviewRange({
       sourceId: target.source.id,
       revisionId: target.revision.id,
@@ -1904,8 +1974,8 @@ export class StudyService extends TypertRemoteService {
     return { source: target.source, ...result }
   }
 
-  async searchForExternalPrincipal(principalId: string, input: { readonly sourceId: SourceId; readonly query: string; readonly limit: number }): Promise<EvidenceSearchResult> {
-    const target = this.externalEvidenceTarget(principalId, input.sourceId)
+  async searchForExternalPrincipal(principalId: string, setRef: string | undefined, input: { readonly sourceId: SourceId; readonly query: string; readonly limit: number }): Promise<EvidenceSearchResult> {
+    const target = this.externalEvidenceTarget(principalId, setRef, input.sourceId)
     const query = input.query.trim()
     if (query === '' || query.length > 512) throw new StudyError('search query must contain 1 to 512 characters', 'SEARCH_QUERY_INVALID')
     const cache = await this.cacheFor(target.revision.id)

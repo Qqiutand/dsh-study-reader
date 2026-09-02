@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0 - 2026-09-03
+
+- Replaced the connection-per-document-set workflow with stable client connections containing up to 32 named reading sets. Adding, editing, or deleting a set no longer rotates the bearer token or changes the Codex MCP configuration.
+- Added the read-only `reader_list_sets` MCP tool and a short `setRef` selector on the five evidence tools. The selector may be omitted while a connection contains exactly one set; once it contains several, calls must name the set explicitly.
+- Kept existing v0.7.x connections and tokens valid by projecting their fixed scope as `set_default`. Added browser controls for set reuse, folder-based selection, in-place editing, copying, and deletion while preserving cross-set authorization boundaries.
+
 ## 0.7.1 - 2026-09-02
 
 - Turned external connections into named reading sets: every grant now generates its own Codex `mcp_servers` key and token environment variable, so multiple fixed document sets can be configured at the same time. Existing v0.7.0 connections remain compatible as `dsh_reader`.

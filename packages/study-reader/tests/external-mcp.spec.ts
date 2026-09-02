@@ -61,6 +61,7 @@ describe('embedded external MCP', () => {
       commandId: 'create-mcp-test',
       label: 'Codex test',
       mcpServerName: 'reader-probability',
+      readingSetLabel: 'Probability',
       sourceIds: [source.id],
       expiresInDays: 7,
     })
@@ -77,14 +78,16 @@ describe('embedded external MCP', () => {
     const initialized = rpcResult(await rpc(harness, created.token, 2, 'initialize', {
       protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' },
     }))
-    expect(initialized.instructions).toContain('Named Reader connection reader-probability')
+    expect(initialized.instructions).toContain('Reader connection reader-probability')
+    expect(initialized.instructions).toContain('reader_list_sets')
     expect(initialized.instructions).toContain('no per-turn or per-session Reader call-count budget')
     const listed = rpcResult(await rpc(harness, created.token, 3, 'tools/list'))
     expect((listed.tools as readonly { readonly name: string }[]).map(tool => tool.name)).toEqual([
-      'reader_get_context', 'reader_list_documents', 'reader_get_outline', 'reader_search_passages', 'reader_read_passage',
+      'reader_list_sets', 'reader_get_context', 'reader_list_documents', 'reader_get_outline', 'reader_search_passages', 'reader_read_passage',
     ])
     expect((listed.tools as readonly { readonly name: string }[]).some(tool => tool.name === 'reader_save_note')).toBe(false)
 
+    const initialSetRef = created.connection.readingSets[0]!.setRef
     const context = rpcResult(await rpc(harness, created.token, 4, 'tools/call', { name: 'reader_get_context', arguments: {} }))
     const contextData = (context.structuredContent as { readonly data: { readonly library: { readonly documents: readonly { readonly documentRef: string }[] } } }).data
     const documentRef = contextData.library.documents[0]!.documentRef
@@ -93,29 +96,63 @@ describe('embedded external MCP', () => {
     expect(JSON.stringify(context)).not.toContain(String(source.id))
     expect(JSON.stringify(context)).not.toContain(hiddenSource.title)
 
+    const updatedConnection = await harness.ctx.study.saveExternalReadingSetForClient({
+      sessionId: 'mcp-test',
+      commandId: 'add-hidden-set',
+      accessId: created.connection.id,
+      expectedVersion: created.connection.version,
+      label: 'Other evidence',
+      sourceIds: [hiddenSource.id],
+    })
+    const otherSetRef = updatedConnection.readingSets.find(set => set.label === 'Other evidence')!.setRef
+    const setsResult = rpcResult(await rpc(harness, created.token, 40, 'tools/call', { name: 'reader_list_sets', arguments: {} }))
+    expect(setsResult.structuredContent).toMatchObject({ status: 'success', data: { sets: [
+      { setRef: initialSetRef, name: 'Probability', documentCount: 1 },
+      { setRef: otherSetRef, name: 'Other evidence', documentCount: 1 },
+    ] } })
+    const missingSet = rpcResult(await rpc(harness, created.token, 41, 'tools/call', { name: 'reader_get_context', arguments: {} }))
+    expect(missingSet.structuredContent).toMatchObject({ status: 'error', error: { code: 'INVALID_ARGUMENT' } })
+
     const hidden = rpcResult(await rpc(harness, created.token, 5, 'tools/call', {
       name: 'reader_get_outline',
-      arguments: { document: { kind: 'document_title', title: hiddenSource.title } },
+      arguments: { setRef: initialSetRef, document: { kind: 'document_title', title: hiddenSource.title } },
     }))
     expect(hidden.structuredContent).toMatchObject({ status: 'error', error: { code: 'DOCUMENT_NOT_FOUND' } })
 
+    const otherContext = rpcResult(await rpc(harness, created.token, 42, 'tools/call', { name: 'reader_get_context', arguments: { setRef: otherSetRef } }))
+    expect(JSON.stringify(otherContext)).toContain(hiddenSource.title)
+    expect(JSON.stringify(otherContext)).not.toContain(source.title)
+    const otherDocumentRef = ((otherContext.structuredContent as { readonly data: { readonly library: { readonly documents: readonly { readonly documentRef: string }[] } } }).data.library.documents[0]!).documentRef
+
     const searched = rpcResult(await rpc(harness, created.token, 6, 'tools/call', {
       name: 'reader_search_passages',
-      arguments: { query: '核心问题', scope: { kind: 'document_ref', documentRef }, limit: 3 },
+      arguments: { setRef: initialSetRef, query: '核心问题', scope: { kind: 'document_ref', documentRef }, limit: 3 },
     }))
     const searchData = (searched.structuredContent as { readonly data: { readonly results: readonly { readonly passageRef: string }[] } }).data
     expect(searchData.results[0]?.passageRef).toMatch(/^passage_\d+$/u)
 
     const read = rpcResult(await rpc(harness, created.token, 7, 'tools/call', {
       name: 'reader_read_passage',
-      arguments: { target: { kind: 'passage_ref', passageRef: searchData.results[0]!.passageRef }, window: 1 },
+      arguments: { setRef: initialSetRef, target: { kind: 'passage_ref', passageRef: searchData.results[0]!.passageRef }, window: 1 },
     }))
     expect(JSON.stringify(read)).toContain('社会科学的核心问题')
+
+    const crossedDocument = rpcResult(await rpc(harness, created.token, 43, 'tools/call', {
+      name: 'reader_get_outline',
+      arguments: { setRef: initialSetRef, document: { kind: 'document_ref', documentRef: otherDocumentRef } },
+    }))
+    expect(crossedDocument.structuredContent).toMatchObject({ status: 'error', error: { code: 'PERMISSION_DENIED' } })
+
+    const crossedPassage = rpcResult(await rpc(harness, created.token, 44, 'tools/call', {
+      name: 'reader_read_passage',
+      arguments: { setRef: otherSetRef, target: { kind: 'passage_ref', passageRef: searchData.results[0]!.passageRef }, window: 1 },
+    }))
+    expect(crossedPassage.structuredContent).toMatchObject({ status: 'error', error: { code: 'PERMISSION_DENIED' } })
 
     // This deliberately exceeds the ordinary DSH Reader discovery budget.
     // External MCP grants do not maintain a call-count budget.
     for (let index = 0; index < 20; index += 1) {
-      const repeated = rpcResult(await rpc(harness, created.token, 20 + index, 'tools/call', { name: 'reader_get_context', arguments: {} }))
+      const repeated = rpcResult(await rpc(harness, created.token, 60 + index, 'tools/call', { name: 'reader_get_context', arguments: { setRef: initialSetRef } }))
       expect(repeated.structuredContent).toMatchObject({ status: 'success' })
       expect(JSON.stringify(repeated)).not.toContain('CALL_BUDGET_EXCEEDED')
     }
@@ -124,7 +161,7 @@ describe('embedded external MCP', () => {
       sessionId: 'mcp-test',
       commandId: 'revoke-mcp-test',
       accessId: created.connection.id,
-      expectedVersion: created.connection.version,
+      expectedVersion: updatedConnection.version,
     })
     const revoked = await rpc(harness, created.token, 8, 'tools/list')
     expect(revoked.response.status).toBe(401)

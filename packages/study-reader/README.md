@@ -31,12 +31,13 @@ tool-call count limits only for that task; the next ordinary message returns to
 the bounded policy while document and write-authorization boundaries stay active.
 
 External MCP connections are created under **Bookroom → External AI access**.
-Each named reading set has a fixed document scope plus its own Codex MCP name
-and token environment variable. The picker supports all documents, uncategorized
-documents, library folders, current-conversation documents, and copying an
-existing set. It exposes only context, list, outline, search, and passage-read
-tools and applies no server-side call-count budget. DSH Skills, presets, memory, imports, and writes
-remain inside DSH.
+Create one stable client connection, then manage several named reading sets inside
+it without rotating the token or changing Codex configuration. The picker supports
+all documents, uncategorized documents, library folders, current-conversation
+documents, and copying an existing set. MCP exposes `reader_list_sets` plus the
+five read-only evidence tools; calls use a short `setRef` when the connection has
+multiple sets. It applies no server-side call-count budget. DSH Skills, presets,
+memory, imports, and writes remain inside DSH.
 
 The complete browser surface follows the DSH English/Simplified Chinese preference without a restart. Imported titles and user-authored content remain in their original language.
 

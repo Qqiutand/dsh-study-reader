@@ -149,15 +149,15 @@ export function createStudyReaderHost(service: StudyService, principalId: string
   }
 }
 
-/** Fixed-scope, read-only host used by the embedded MCP endpoint. */
-export function createExternalStudyReaderHost(service: StudyService, principalId: string): ReaderHost {
+/** Reading-set-scoped, read-only host used by the embedded MCP endpoint. */
+export function createExternalStudyReaderHost(service: StudyService, principalId: string, setRef: string): ReaderHost {
   return createReadOnlyReaderHost(principalId, {
     assertPrincipal: () => { service.assertExternalReaderPrincipal(principalId) },
-    listAll: async () => await service.listAllSourcesForExternalPrincipal(principalId),
-    list: async (query, limit) => await service.listSourcesForExternalPrincipal(principalId, query, limit),
-    outline: async sourceId => await service.outlineForExternalPrincipal(principalId, sourceId),
-    search: async input => await service.searchForExternalPrincipal(principalId, input),
-    info: async sourceId => await service.sourceInfoForExternalPrincipal(principalId, sourceId),
-    read: async (input, maxChars) => await service.readForExternalPrincipal(principalId, input, maxChars),
+    listAll: async () => await service.listAllSourcesForExternalPrincipal(principalId, setRef),
+    list: async (query, limit) => await service.listSourcesForExternalPrincipal(principalId, setRef, query, limit),
+    outline: async sourceId => await service.outlineForExternalPrincipal(principalId, setRef, sourceId),
+    search: async input => await service.searchForExternalPrincipal(principalId, setRef, input),
+    info: async sourceId => await service.sourceInfoForExternalPrincipal(principalId, setRef, sourceId),
+    read: async (input, maxChars) => await service.readForExternalPrincipal(principalId, setRef, input, maxChars),
   })
 }

@@ -12,7 +12,7 @@ import type {
   ProviderConnectionView,
   WorkspaceDefaultView, SaveWorkspaceDefaultRequest, ClearWorkspaceDefaultRequest,
   CreateExternalAccessRequest, CreateExternalAccessResult, ExternalAccessSnapshot,
-  ExternalAccessView, RevokeExternalAccessRequest,
+  DeleteExternalReadingSetRequest, ExternalAccessView, RevokeExternalAccessRequest, SaveExternalReadingSetRequest,
 } from '../study/types.ts'
 import type {
   AgentGrant, ManagementFolder, ManagementFolderView, ManagementProposal,
@@ -49,6 +49,8 @@ export interface StudyRemote {
   clearWorkspaceDefault(request: ClearWorkspaceDefaultRequest): Call<WorkspaceDefaultView>
   externalAccessSnapshot(request: { readonly sessionId: string }): Call<ExternalAccessSnapshot>
   createExternalAccess(request: CreateExternalAccessRequest): Call<CreateExternalAccessResult>
+  saveExternalReadingSet(request: SaveExternalReadingSetRequest): Call<ExternalAccessView>
+  deleteExternalReadingSet(request: DeleteExternalReadingSetRequest): Call<ExternalAccessView>
   revokeExternalAccess(request: RevokeExternalAccessRequest): Call<ExternalAccessView>
   executeStudioCommand(request: ExecuteInjectionStudioCommandRequest): Call<ExecuteInjectionStudioCommandResult>
   compileInjectionProfile(request: CompileInjectionPreviewRequest): Call<CompiledInjection>

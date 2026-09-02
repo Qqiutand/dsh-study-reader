@@ -3,6 +3,12 @@ import { toolResult } from './contracts.ts'
 import { ResourceResolutionError, TurnResourceMap } from './resource-map.ts'
 import { isPlainObject, ToolInputError } from './strict-input.ts'
 
+function isPermissionDenied(error: unknown): error is { readonly code: 'PERMISSION_DENIED'; readonly message: string } {
+  return error !== null && typeof error === 'object'
+    && 'code' in error && error.code === 'PERMISSION_DENIED'
+    && 'message' in error && typeof error.message === 'string'
+}
+
 export interface ToolExecutionContext {
   readonly principalId: string
   readonly host: ReaderHost
@@ -117,6 +123,7 @@ export class ReaderToolDispatcher {
     try { result = await spec.execute(this.context, input, fused) }
     catch (error) {
       if (error instanceof ResourceResolutionError) result = toolResult.error(error.code, error.message, error.retryable)
+      else if (isPermissionDenied(error)) result = toolResult.error('PERMISSION_DENIED', error.message)
       else if (signal.aborted) result = toolResult.error('ABORTED', `${name} 已被中止`, true)
       else if (timeout.aborted) result = toolResult.error('TIMEOUT', `${name} 执行超时`, true)
       else result = toolResult.error('HOST_ERROR', `${name} 执行失败：${error instanceof Error ? error.message : String(error)}`, true)

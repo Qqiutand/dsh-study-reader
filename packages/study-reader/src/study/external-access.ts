@@ -4,7 +4,7 @@ import { chmod, mkdir, open as openFile, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { StudyError } from '../protocol/error.ts'
-import type { ExternalAccessRecord, SourceId } from './types.ts'
+import type { ExternalAccessRecord, ExternalReadingSetRecord, SourceId } from './types.ts'
 
 const TOKEN_PREFIX = 'dsr_v1'
 const MASTER_KEY_FILE = 'external-mcp.key'
@@ -12,7 +12,9 @@ const COMMAND_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/u
 const ACCESS_ID_PATTERN = /^external-[a-f0-9]{32}$/u
 const TOKEN_SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/u
 const MCP_SERVER_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u
+const SET_REF_PATTERN = /^set_[A-Za-z0-9_-]{6,16}$/u
 const LEGACY_MCP_SERVER_NAME = 'dsh_reader'
+const LEGACY_SET_REF = 'set_default'
 
 function errorCode(error: unknown): string | undefined {
   return error !== null && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
@@ -69,12 +71,40 @@ function normalizedMcpServerName(value: string): string {
   return name
 }
 
+function normalizedSetLabel(value: string): string {
+  const label = value.trim().normalize('NFC')
+  if (label.length === 0 || label.length > 120 || /[\u0000-\u001f\u007f]/u.test(label)) {
+    throw new StudyError('reading set label must contain 1 to 120 printable characters', 'EXTERNAL_SET_LABEL_INVALID')
+  }
+  return label
+}
+
+function normalizedSourceIds(sourceIds: readonly SourceId[]): SourceId[] {
+  const normalized = [...new Set(sourceIds)].sort((left, right) => String(left).localeCompare(String(right)))
+  if (normalized.length === 0 || normalized.length > 100) {
+    throw new StudyError('a reading set requires 1 to 100 documents', 'EXTERNAL_SET_SCOPE_INVALID')
+  }
+  return normalized
+}
+
 export function externalMcpServerName(record: ExternalAccessRecord): string {
   return record.mcpServerName ?? LEGACY_MCP_SERVER_NAME
 }
 
+/** Compatibility projection for v0.7 connections that stored one flat scope. */
+export function externalReadingSets(record: ExternalAccessRecord): readonly ExternalReadingSetRecord[] {
+  return record.readingSets ?? [{
+    setRef: LEGACY_SET_REF,
+    label: record.label,
+    sourceIds: record.sourceIds,
+    createdAt: record.createdAt,
+    updatedAt: record.createdAt,
+  }]
+}
+
 /** Stable, human-readable Codex environment key derived from one MCP name. */
 export function externalTokenEnvironmentVariable(mcpServerName: string): string {
+  if (mcpServerName.toLowerCase() === 'study-reader') return 'DSH_STUDY_READER_TOKEN'
   const semanticName = mcpServerName.replace(/^reader[-_]?/iu, '') || mcpServerName
   return `DSH_STUDY_READER_${semanticName.toUpperCase().replaceAll(/[^A-Z0-9]+/gu, '_')}_TOKEN`
 }
@@ -92,6 +122,7 @@ export interface CreateExternalAccessInput {
   readonly commandId: string
   readonly label: string
   readonly mcpServerName: string
+  readonly readingSetLabel: string
   readonly sourceIds: readonly SourceId[]
   readonly expiresInDays: number
 }
@@ -121,14 +152,12 @@ export class ExternalAccessManager {
     assertCommandId(input.commandId)
     const label = normalizedLabel(input.label)
     const mcpServerName = normalizedMcpServerName(input.mcpServerName)
-    const sourceIds = [...new Set(input.sourceIds)].sort((left, right) => String(left).localeCompare(String(right)))
-    if (sourceIds.length === 0 || sourceIds.length > 100) {
-      throw new StudyError('external access requires 1 to 100 documents', 'EXTERNAL_ACCESS_SCOPE_INVALID')
-    }
+    const readingSetLabel = normalizedSetLabel(input.readingSetLabel)
+    const sourceIds = normalizedSourceIds(input.sourceIds)
     if (!Number.isInteger(input.expiresInDays) || input.expiresInDays < 1 || input.expiresInDays > 365) {
       throw new StudyError('external access expiry must be between 1 and 365 days', 'EXTERNAL_ACCESS_EXPIRY_INVALID')
     }
-    const hash = payloadHash({ label, mcpServerName, sourceIds, expiresInDays: input.expiresInDays })
+    const hash = payloadHash({ label, mcpServerName, readingSetLabel, sourceIds, expiresInDays: input.expiresInDays })
     // One create lock also makes the active MCP-name uniqueness check atomic
     // across different browser command ids.
     return await this.lock('create', async () => {
@@ -152,6 +181,13 @@ export class ExternalAccessManager {
         label,
         mcpServerName,
         sourceIds,
+        readingSets: [{
+          setRef: this.newSetRef(),
+          label: readingSetLabel,
+          sourceIds,
+          createdAt: now,
+          updatedAt: now,
+        }],
         createdAt: now,
         expiresAt: now + input.expiresInDays * 86_400_000,
         version: 1,
@@ -160,6 +196,104 @@ export class ExternalAccessManager {
       }
       await this.records.put(record.id, record)
       return { record, token: this.tokenFor(record.id) }
+    })
+  }
+
+  listSets(accessId: string): readonly ExternalReadingSetRecord[] {
+    return externalReadingSets(this.requireActive(accessId))
+  }
+
+  resolveSet(accessId: string, setRef?: string): ExternalReadingSetRecord {
+    const sets = this.listSets(accessId)
+    if (setRef === undefined) {
+      if (sets.length === 1) return sets[0]!
+      throw new StudyError('setRef is required because this connection exposes multiple reading sets; call reader_list_sets first', 'EXTERNAL_SET_REQUIRED')
+    }
+    if (!SET_REF_PATTERN.test(setRef)) throw new StudyError('setRef is invalid', 'EXTERNAL_SET_NOT_FOUND')
+    const set = sets.find(candidate => candidate.setRef === setRef)
+    if (set === undefined) throw new StudyError('reading set is unavailable to this connection', 'EXTERNAL_SET_NOT_FOUND')
+    return set
+  }
+
+  async saveSet(input: {
+    readonly accessId: string
+    readonly commandId: string
+    readonly expectedVersion: number
+    readonly setRef?: string
+    readonly label: string
+    readonly sourceIds: readonly SourceId[]
+  }): Promise<{ readonly record: ExternalAccessRecord; readonly set: ExternalReadingSetRecord }> {
+    assertCommandId(input.commandId)
+    const label = normalizedSetLabel(input.label)
+    const sourceIds = normalizedSourceIds(input.sourceIds)
+    const hash = payloadHash({ kind: 'save-set', setRef: input.setRef, label, sourceIds })
+    return await this.lock(`access:${input.accessId}`, async () => {
+      const record = this.requireActive(input.accessId)
+      if (record.lastCommandId === input.commandId) {
+        if (record.lastCommandPayloadHash !== hash || record.lastCommandSetRef === undefined) throw new StudyError('commandId was reused with a different external access request', 'COMMAND_ID_CONFLICT')
+        const replay = externalReadingSets(record).find(set => set.setRef === record.lastCommandSetRef)
+        if (replay === undefined) throw new StudyError('reading set command receipt is invalid', 'COMMAND_ID_CONFLICT')
+        return { record, set: replay }
+      }
+      if (record.version !== input.expectedVersion) throw new StudyError('external access version conflict', 'EXTERNAL_ACCESS_VERSION_CONFLICT')
+      const current = [...externalReadingSets(record)]
+      const existingIndex = input.setRef === undefined ? -1 : current.findIndex(set => set.setRef === input.setRef)
+      if (input.setRef !== undefined && existingIndex < 0) throw new StudyError('reading set is unavailable to this connection', 'EXTERNAL_SET_NOT_FOUND')
+      if (existingIndex < 0 && current.length >= 32) throw new StudyError('an external connection supports at most 32 reading sets', 'EXTERNAL_SET_LIMIT_EXCEEDED')
+      if (current.some((set, index) => index !== existingIndex && set.label.normalize('NFKC').toLocaleLowerCase() === label.normalize('NFKC').toLocaleLowerCase())) {
+        throw new StudyError(`reading set "${label}" already exists in this connection`, 'EXTERNAL_SET_LABEL_CONFLICT')
+      }
+      const now = Date.now()
+      const set: ExternalReadingSetRecord = existingIndex < 0
+        ? { setRef: this.newSetRef(), label, sourceIds, createdAt: now, updatedAt: now }
+        : { ...current[existingIndex]!, label, sourceIds, updatedAt: now }
+      if (existingIndex < 0) current.push(set)
+      else current[existingIndex] = set
+      const next: ExternalAccessRecord = {
+        ...record,
+        sourceIds: this.unionSourceIds(current),
+        readingSets: current,
+        version: record.version + 1,
+        lastCommandId: input.commandId,
+        lastCommandPayloadHash: hash,
+        lastCommandSetRef: set.setRef,
+      }
+      await this.records.put(next.id, next)
+      return { record: next, set }
+    })
+  }
+
+  async deleteSet(input: {
+    readonly accessId: string
+    readonly commandId: string
+    readonly expectedVersion: number
+    readonly setRef: string
+  }): Promise<ExternalAccessRecord> {
+    assertCommandId(input.commandId)
+    if (!SET_REF_PATTERN.test(input.setRef)) throw new StudyError('reading set is unavailable to this connection', 'EXTERNAL_SET_NOT_FOUND')
+    const hash = payloadHash({ kind: 'delete-set', setRef: input.setRef })
+    return await this.lock(`access:${input.accessId}`, async () => {
+      const record = this.requireActive(input.accessId)
+      if (record.lastCommandId === input.commandId) {
+        if (record.lastCommandPayloadHash !== hash) throw new StudyError('commandId was reused with a different external access request', 'COMMAND_ID_CONFLICT')
+        return record
+      }
+      if (record.version !== input.expectedVersion) throw new StudyError('external access version conflict', 'EXTERNAL_ACCESS_VERSION_CONFLICT')
+      const current = externalReadingSets(record)
+      if (!current.some(set => set.setRef === input.setRef)) throw new StudyError('reading set is unavailable to this connection', 'EXTERNAL_SET_NOT_FOUND')
+      if (current.length === 1) throw new StudyError('the last reading set cannot be deleted; revoke the connection instead', 'EXTERNAL_SET_LAST_DELETE')
+      const readingSets = current.filter(set => set.setRef !== input.setRef)
+      const next: ExternalAccessRecord = {
+        ...record,
+        sourceIds: this.unionSourceIds(readingSets),
+        readingSets,
+        version: record.version + 1,
+        lastCommandId: input.commandId,
+        lastCommandPayloadHash: hash,
+        lastCommandSetRef: input.setRef,
+      }
+      await this.records.put(next.id, next)
+      return next
     })
   }
 
@@ -205,6 +339,15 @@ export class ExternalAccessManager {
 
   private tokenFor(accessId: string): string {
     return `${TOKEN_PREFIX}.${accessId}.${this.signatureFor(accessId).toString('base64url')}`
+  }
+
+  private newSetRef(): string {
+    return `set_${randomBytes(6).toString('base64url')}`
+  }
+
+  private unionSourceIds(sets: readonly ExternalReadingSetRecord[]): SourceId[] {
+    return [...new Set(sets.flatMap(set => set.sourceIds))]
+      .sort((left, right) => String(left).localeCompare(String(right)))
   }
 
   private signatureFor(accessId: string): Buffer {

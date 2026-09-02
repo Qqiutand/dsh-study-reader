@@ -210,6 +210,15 @@ export interface WorkspaceDefaultApplicationRecord {
   readonly appliedAt: number
 }
 
+/** One named, editable document set exposed through an external connection. */
+export interface ExternalReadingSetRecord {
+  readonly setRef: string
+  readonly label: string
+  readonly sourceIds: readonly SourceId[]
+  readonly createdAt: number
+  readonly updatedAt: number
+}
+
 /** Durable authorization for one external, read-only MCP connection. */
 export interface ExternalAccessRecord {
   readonly schemaVersion: 1
@@ -217,8 +226,10 @@ export interface ExternalAccessRecord {
   readonly label: string
   /** Codex config key. Optional only for records created by v0.7.0. */
   readonly mcpServerName?: string
-  /** Exact library sources visible through this connection. */
+  /** Union of sources visible through this connection; retained for v0.7 compatibility. */
   readonly sourceIds: readonly SourceId[]
+  /** Missing only on v0.7 records, which are projected as one default set. */
+  readonly readingSets?: readonly ExternalReadingSetRecord[]
   readonly createdAt: number
   readonly expiresAt: number
   readonly revokedAt?: number
@@ -228,6 +239,18 @@ export interface ExternalAccessRecord {
   readonly createPayloadHash: string
   /** Idempotency receipt for the latest state-changing command. */
   readonly lastCommandId?: string
+  readonly lastCommandPayloadHash?: string
+  readonly lastCommandSetRef?: string
+}
+
+export interface ExternalReadingSetView {
+  readonly setRef: string
+  readonly label: string
+  readonly sourceIds: readonly string[]
+  readonly documentTitles: readonly string[]
+  readonly missingDocumentCount: number
+  readonly createdAt: number
+  readonly updatedAt: number
 }
 
 export interface ExternalAccessView {
@@ -237,6 +260,7 @@ export interface ExternalAccessView {
   readonly sourceIds: readonly string[]
   readonly documentTitles: readonly string[]
   readonly missingDocumentCount: number
+  readonly readingSets: readonly ExternalReadingSetView[]
   readonly state: 'active' | 'expired' | 'revoked'
   readonly createdAt: number
   readonly expiresAt: number
@@ -266,6 +290,7 @@ export interface CreateExternalAccessRequest {
   readonly commandId: string
   readonly label: string
   readonly mcpServerName: string
+  readonly readingSetLabel: string
   readonly sourceIds: readonly string[]
   readonly expiresInDays: number
 }
@@ -284,6 +309,25 @@ export interface RevokeExternalAccessRequest {
   readonly commandId: string
   readonly accessId: string
   readonly expectedVersion: number
+}
+
+export interface SaveExternalReadingSetRequest {
+  readonly sessionId: string
+  readonly commandId: string
+  readonly accessId: string
+  readonly expectedVersion: number
+  /** Omit to create a set; include to update that set without rotating the token. */
+  readonly setRef?: string
+  readonly label: string
+  readonly sourceIds: readonly string[]
+}
+
+export interface DeleteExternalReadingSetRequest {
+  readonly sessionId: string
+  readonly commandId: string
+  readonly accessId: string
+  readonly expectedVersion: number
+  readonly setRef: string
 }
 
 /** Browser-safe state of the current Session's owning Workspace default. */

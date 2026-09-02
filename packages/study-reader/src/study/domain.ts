@@ -79,7 +79,14 @@ const externalAccessRecordSchema = z.object({
   // v0.7.0 records used one global `dsh_reader` name. Keeping this optional
   // is the compatibility path for those already-installed records.
   mcpServerName: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u).optional(),
-  sourceIds: z.array(z.string()).min(1).max(100),
+  sourceIds: z.array(z.string()).min(1).max(3200),
+  readingSets: z.array(z.object({
+    setRef: z.string().regex(/^set_[A-Za-z0-9_-]{6,16}$/u),
+    label: z.string().min(1).max(120),
+    sourceIds: z.array(z.string()).min(1).max(100),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })).min(1).max(32).optional(),
   createdAt: z.number(),
   expiresAt: z.number(),
   revokedAt: z.number().optional(),
@@ -87,6 +94,8 @@ const externalAccessRecordSchema = z.object({
   createCommandId: z.string().min(1).max(128),
   createPayloadHash: sha256Schema,
   lastCommandId: z.string().min(1).max(128).optional(),
+  lastCommandPayloadHash: sha256Schema.optional(),
+  lastCommandSetRef: z.string().regex(/^set_[A-Za-z0-9_-]{6,16}$/u).optional(),
 })
 
 const outlineItemSchema = z.object({

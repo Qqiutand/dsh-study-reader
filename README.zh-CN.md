@@ -65,31 +65,31 @@ pnpm run install:dsh -- \
 
 ### 外部 AI 访问（MCP）
 
-打开 **书房 → 外部 AI 访问**，为书单填写显示名称和唯一的 Codex MCP 名称，
-再从全部文献、未分类或任一文献文件夹中选择范围。也可以直接载入本次对话的文献，
-或者复制已有连接的书单后生成新连接。
-
-每个命名连接都有独立的 Bearer Token 和环境变量，因此可以让
-`reader-probability` 访问一组书、`reader-optics` 访问另一组书。页面只显示一次
-Token，并给出对应的 Codex 配置。保持
-`pnpm dsh web` 运行，在启动 Codex 前导出页面给出的 Token，再把生成的配置写入
-`~/.codex/config.toml`：
+打开 **书房 → 外部 AI 访问**，先创建一个客户端连接，通常保留名称
+`study-reader` 即可。页面只显示一次 Bearer Token，并生成对应的 Codex 配置。
+保持 `pnpm dsh web` 运行，在启动 Codex 前导出页面给出的 Token，再把生成的配置
+写入 `~/.codex/config.toml`：
 
 ```toml
-[mcp_servers.reader-probability]
+[mcp_servers.study-reader]
 url = "http://127.0.0.1:PORT/study-reader/mcp"
-bearer_token_env_var = "DSH_STUDY_READER_PROBABILITY_TOKEN"
+bearer_token_env_var = "DSH_STUDY_READER_TOKEN"
 ```
 
-环境变量名由 MCP 名称稳定生成；多个连接的变量可以同时导出，不需要来回切换。
-Token 值各不相同，才能保证每个书单可以单独授权和撤销。请复制页面实际生成的配置。
+然后在这个稳定连接内创建多个命名书单。文献可来自全部文献、未分类、任一文件夹或
+本次对话；书单可以在浏览器中编辑、复制和删除，不会改变 Token 或 Codex 配置。
+只有在另一个客户端确实需要单独过期或撤销时，才需要再建一条连接。
 
-这个连接只提供 `reader_get_context`、`reader_list_documents`、
-`reader_get_outline`、`reader_search_passages` 和 `reader_read_passage`。
+连接会提供 `reader_list_sets`，以及 `reader_get_context`、
+`reader_list_documents`、`reader_get_outline`、`reader_search_passages` 和
+`reader_read_passage`。第一个工具返回书单名称、文献数量和简短的不透明 `setRef`。
+只有一个书单时可以省略 `setRef`；存在多个书单时，Reader 调用必须带上选中的值。
+文献与段落引用不能跨书单复用。
+
 外部 MCP 服务端不设置每轮或每个会话的 Reader 调用次数预算；单次结果大小、超时、
 授权范围和不透明引用仍有边界，Codex 自身也可能受到会话时长、上下文或用量限制。
-授权的文献集合保持不变；需要换书时，复制或新建连接并撤销旧连接即可。DSH 的配置预设、
-Skills、会话记忆、导入、删除和笔记写入仍留在 DSH 内部，不会通过 MCP 暴露。
+DSH 的配置预设、Skills、会话记忆、导入、删除和笔记写入仍留在 DSH 内部，不会通过
+MCP 暴露。
 
 ## 本地开发
 

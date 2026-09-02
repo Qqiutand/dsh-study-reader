@@ -67,34 +67,33 @@ write authorization, per-call timeouts, and exact duplicate-call protection stay
 
 ### External AI access (MCP)
 
-Open **Bookroom → External AI access**, give the reading set a display label and
-a unique Codex MCP name, then select documents from the whole library,
-uncategorized documents, or a library folder. You can also load the current
-conversation's documents or copy an existing connection's set into a new draft.
-
-Each named connection gets its own bearer token and environment variable, so
-`reader-probability` and `reader-optics` can expose different document sets at
-the same time. The page shows a bearer token once and generates the matching
-Codex configuration. Keep `pnpm dsh web` running, export the shown token before
-starting Codex, and add the generated block to `~/.codex/config.toml`:
+Open **Bookroom → External AI access** and create one client connection, normally
+named `study-reader`. The page shows its bearer token once and generates the
+matching Codex configuration. Keep `pnpm dsh web` running, export the shown token
+before starting Codex, and add the generated block to `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.reader-probability]
+[mcp_servers.study-reader]
 url = "http://127.0.0.1:PORT/study-reader/mcp"
-bearer_token_env_var = "DSH_STUDY_READER_PROBABILITY_TOKEN"
+bearer_token_env_var = "DSH_STUDY_READER_TOKEN"
 ```
 
-The environment-variable name is derived predictably from the MCP name. Variables
-for multiple connections can be exported together; they do not need to be switched.
-Token values remain distinct so each reading set can be authorized and revoked
-independently. Copy the actual generated block from the page.
+Inside that stable connection, create named reading sets from the whole library,
+uncategorized documents, a library folder, or the current conversation. Sets can
+be edited, copied, and deleted in the browser without changing the token or Codex
+configuration. Create a separate connection only when you need independently
+expiring or revocable credentials for another client.
 
-The connection exposes only `reader_get_context`, `reader_list_documents`,
-`reader_get_outline`, `reader_search_passages`, and `reader_read_passage`.
+The connection exposes `reader_list_sets` plus `reader_get_context`,
+`reader_list_documents`, `reader_get_outline`, `reader_search_passages`, and
+`reader_read_passage`. The first tool returns each set's display name, document
+count, and short opaque `setRef`. Reader calls may omit `setRef` while only one
+set exists; with multiple sets they must pass the chosen value. Document and
+passage references cannot be reused across sets.
+
 The external MCP server has no per-turn or per-session Reader call-count budget.
 Per-call result sizes, timeouts, authorization, and opaque-reference boundaries
 still apply, and Codex can retain its own session, context, or usage limits.
-Its document set is fixed until you copy or create another connection and revoke it.
 DSH presets, Skills, conversation memory, imports, deletion, and note writes
 remain inside DSH and are not exposed through MCP.
 
