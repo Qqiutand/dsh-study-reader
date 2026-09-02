@@ -47,6 +47,8 @@ import type {
   SearchDocumentRequest, SearchDocumentResult, ToolDescriptorView, ProviderConnectionView,
   WorkspaceDefaultApplicationRecord, WorkspaceDefaultRecord, WorkspaceDefaultView,
   SaveWorkspaceDefaultRequest, ClearWorkspaceDefaultRequest,
+  CreateExternalAccessRequest, CreateExternalAccessResult, ExternalAccessRecord,
+  ExternalAccessSnapshot, ExternalAccessView, RevokeExternalAccessRequest,
 } from './types.ts'
 import { isStudyEventType } from '../protocol/events.ts'
 import type { CognitiveProbeOptionData } from '../protocol/events.ts'
@@ -61,6 +63,7 @@ import { compileToolDescription, schemaHash, STUDY_TOOL_SPECS } from '../tools/s
 import { compileInjection } from '../studio/injection-compiler.ts'
 import { InjectionStudioRepository } from '../studio/repository.ts'
 import { ProviderConnectionRepository } from '../studio/provider-connections.ts'
+import { ExternalAccessManager } from './external-access.ts'
 import { READER_TOOL_NAMES, type ReaderToolName } from '../ai/contracts.ts'
 import { STUDY_READER_SKILL_IDS, STUDY_READER_SKILLS, type StudyReaderSkillId } from '../ai/skill-catalog.ts'
 import { normalizeStudyReaderProfile, type SerializedStudyReaderProfile } from '../ai/turn-runtime.ts'
@@ -414,6 +417,10 @@ export interface StudyServiceConfig {
   readonly acceptExtensions: readonly string[]
   /** Local-only Bookroom control plane; never an authenticated principal. */
   readonly managementControlMode: 'trusted-local-user' | 'disabled'
+  /** Whether the loopback-only, read-only MCP endpoint is mounted. */
+  readonly externalMcpEnabled: boolean
+  /** Browser-safe loopback URL shown in generated client configuration. */
+  readonly externalMcpUrl: string
 }
 
 
@@ -427,6 +434,7 @@ export interface StudyServiceDeps {
   readonly sourceAccess: KvTable<string, SourceAccessRecord>
   readonly workspaceDefaults: KvTable<string, WorkspaceDefaultRecord>
   readonly workspaceDefaultApplications: KvTable<string, WorkspaceDefaultApplicationRecord>
+  readonly externalAccess: ExternalAccessManager
   readonly revisions: KvTable<RevisionId, RevisionRecord>
   readonly imports: KvTable<ImportId, ImportRecord>
   readonly artifactSets: KvTable<ExtractionArtifactSetId, ExtractionArtifactSetRecord>
@@ -853,6 +861,83 @@ export class StudyService extends TypertRemoteService {
       sources,
       registrySkills: registryCatalog.status,
     }
+  }
+
+  private externalAccessView(record: ExternalAccessRecord): ExternalAccessView {
+    const documentTitles: string[] = []
+    let missingDocumentCount = 0
+    for (const sourceId of record.sourceIds) {
+      const source = this.deps.sources.get(sourceId)
+      if (source === undefined) missingDocumentCount += 1
+      else documentTitles.push(source.displayTitle ?? source.title)
+    }
+    return {
+      id: record.id,
+      label: record.label,
+      sourceIds: record.sourceIds,
+      documentTitles,
+      missingDocumentCount,
+      state: this.deps.externalAccess.state(record),
+      createdAt: record.createdAt,
+      expiresAt: record.expiresAt,
+      ...(record.revokedAt === undefined ? {} : { revokedAt: record.revokedAt }),
+      version: record.version,
+    }
+  }
+
+  /** Browser projection for the deliberately small external-AI control plane. */
+  @Remote('externalAccessSnapshot')
+  externalAccessSnapshotForClient(request: { readonly sessionId: string }): ExternalAccessSnapshot {
+    const sessionId = this.requireSessionId(request.sessionId, 'EXTERNAL_ACCESS_SESSION_REQUIRED')
+    return {
+      enabled: this.deps.config.externalMcpEnabled,
+      controlMode: this.deps.config.managementControlMode,
+      mcpUrl: this.deps.config.externalMcpUrl,
+      sources: this.listSourcesInScope(undefined, Number.MAX_SAFE_INTEGER, undefined, Number.MAX_SAFE_INTEGER)
+        .map(source => ({ ...source, selectedInConversation: this.hasSourceAccess(sessionId, source.id) })),
+      connections: this.deps.externalAccess.list().map(record => this.externalAccessView(record)),
+    }
+  }
+
+  /** Create one fixed document grant and reveal its bearer token exactly in this response. */
+  @Remote('createExternalAccess')
+  async createExternalAccessForClient(request: CreateExternalAccessRequest): Promise<CreateExternalAccessResult> {
+    if (!this.deps.config.externalMcpEnabled) throw new StudyError('external MCP access is disabled', 'EXTERNAL_ACCESS_DISABLED')
+    if (this.deps.config.managementControlMode !== 'trusted-local-user') throw new StudyError('local management control is disabled', 'MANAGEMENT_CONTROL_DISABLED')
+    this.requireSessionId(request.sessionId, 'EXTERNAL_ACCESS_SESSION_REQUIRED')
+    if (!Array.isArray(request.sourceIds) || request.sourceIds.length < 1 || request.sourceIds.length > 100) {
+      throw new StudyError('external access requires 1 to 100 documents', 'EXTERNAL_ACCESS_SCOPE_INVALID')
+    }
+    const sourceIds = [...new Set(request.sourceIds.map(sourceId => sourceId.trim()).filter(sourceId => sourceId !== ''))] as SourceId[]
+    for (const sourceId of sourceIds) {
+      const source = this.deps.sources.get(sourceId)
+      if (source === undefined) throw new StudyError(`source "${sourceId}" not found`, 'SOURCE_NOT_FOUND')
+      this.resolveRevision(sourceId, source.currentRevisionId)
+      this.assertSourceDeletionNotAdmitted(sourceId)
+    }
+    const created = await this.deps.externalAccess.create({
+      commandId: request.commandId,
+      label: request.label,
+      sourceIds,
+      expiresInDays: request.expiresInDays,
+    })
+    const url = this.deps.config.externalMcpUrl
+    return {
+      connection: this.externalAccessView(created.record),
+      token: created.token,
+      mcpUrl: url,
+      environmentVariable: 'DSH_STUDY_READER_TOKEN',
+      codexConfig: `[mcp_servers.dsh_reader]\nurl = ${JSON.stringify(url)}\nbearer_token_env_var = "DSH_STUDY_READER_TOKEN"`,
+    }
+  }
+
+  /** Revoke an external connection immediately; existing document references stop resolving. */
+  @Remote('revokeExternalAccess')
+  async revokeExternalAccessForClient(request: RevokeExternalAccessRequest): Promise<ExternalAccessView> {
+    if (this.deps.config.managementControlMode !== 'trusted-local-user') throw new StudyError('local management control is disabled', 'MANAGEMENT_CONTROL_DISABLED')
+    this.requireSessionId(request.sessionId, 'EXTERNAL_ACCESS_SESSION_REQUIRED')
+    if (!Number.isInteger(request.expectedVersion) || request.expectedVersion < 1) throw new StudyError('external access version is invalid', 'EXTERNAL_ACCESS_VERSION_INVALID')
+    return this.externalAccessView(await this.deps.externalAccess.revoke(request.accessId, request.commandId, request.expectedVersion))
   }
 
   private workspaceIdentity(sessionId: string): { readonly workspacePath: string; readonly createdAt: number; readonly parentSession?: string; readonly origin?: 'subagent' } | undefined {
@@ -1742,6 +1827,80 @@ export class StudyService extends TypertRemoteService {
     const target = await this.resolveEvidenceTarget(input.sourceId, input.revisionId)
     const result = await this.search({ sourceId: target.source.id, revisionId: target.source.revisionId, query: input.query, limit: input.limit })
     return { source: target.source, ...result }
+  }
+
+  /** Authenticate the external bearer at the HTTP boundary without exposing failure details. */
+  authenticateExternalAccess(token: string): ExternalAccessRecord | undefined {
+    if (!this.deps.config.externalMcpEnabled) return undefined
+    return this.deps.externalAccess.authenticate(token)
+  }
+
+  /** Re-authorize the fixed external principal on every MCP operation. */
+  assertExternalReaderPrincipal(principalId: string): ExternalAccessRecord {
+    return this.deps.externalAccess.requireActive(principalId)
+  }
+
+  private externalSourceIds(principalId: string): ReadonlySet<SourceId> {
+    return new Set(this.assertExternalReaderPrincipal(principalId).sourceIds)
+  }
+
+  private externalEvidenceTarget(principalId: string, sourceId: SourceId): { readonly source: EvidenceSource; readonly revision: RevisionRecord } {
+    const allowed = this.externalSourceIds(principalId)
+    if (!allowed.has(sourceId)) throw new StudyError('external connection cannot access this document', 'PERMISSION_DENIED')
+    const source = this.deps.sources.get(sourceId)
+    if (source === undefined) throw new StudyError(`source "${sourceId}" not found`, 'SOURCE_NOT_FOUND')
+    const revision = this.resolveRevision(sourceId, source.currentRevisionId)
+    return {
+      source: {
+        id: sourceId,
+        revisionId: revision.id,
+        title: source.displayTitle ?? source.title,
+        format: revision.format ?? source.format ?? 'other',
+      },
+      revision,
+    }
+  }
+
+  /** List only documents pinned into one browser-created external connection. */
+  async listSourcesForExternalPrincipal(principalId: string, query?: string, limit?: number): Promise<readonly SourceSummary[]> {
+    const allowed = this.externalSourceIds(principalId)
+    return this.listSourcesInScope(query, Number.MAX_SAFE_INTEGER, undefined, Number.MAX_SAFE_INTEGER)
+      .filter(source => allowed.has(source.id))
+      .slice(0, limit === undefined ? 100 : Math.min(Math.max(1, Math.floor(limit)), 100))
+  }
+
+  /** Return every currently readable document in one external connection. */
+  async listAllSourcesForExternalPrincipal(principalId: string): Promise<readonly SourceSummary[]> {
+    return await this.listSourcesForExternalPrincipal(principalId, undefined, 100)
+  }
+
+  async sourceInfoForExternalPrincipal(principalId: string, sourceId: SourceId): Promise<EvidenceSource> {
+    return this.externalEvidenceTarget(principalId, sourceId).source
+  }
+
+  async outlineForExternalPrincipal(principalId: string, sourceId: SourceId): Promise<EvidenceOutlineResult> {
+    const target = this.externalEvidenceTarget(principalId, sourceId)
+    return { source: target.source, outline: target.revision.outline }
+  }
+
+  async readForExternalPrincipal(principalId: string, input: { readonly sourceId: SourceId; readonly range: ReadRange; readonly cursor?: number }, maxChars: number): Promise<EvidenceReadResult> {
+    const target = this.externalEvidenceTarget(principalId, input.sourceId)
+    const result = await this.readPreviewRange({
+      sourceId: target.source.id,
+      revisionId: target.revision.id,
+      range: input.range,
+      ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+    }, Math.min(Math.max(1, maxChars), this.deps.config.maxReadChars))
+    return { source: target.source, ...result }
+  }
+
+  async searchForExternalPrincipal(principalId: string, input: { readonly sourceId: SourceId; readonly query: string; readonly limit: number }): Promise<EvidenceSearchResult> {
+    const target = this.externalEvidenceTarget(principalId, input.sourceId)
+    const query = input.query.trim()
+    if (query === '' || query.length > 512) throw new StudyError('search query must contain 1 to 512 characters', 'SEARCH_QUERY_INVALID')
+    const cache = await this.cacheFor(target.revision.id)
+    const limit = Math.min(Math.max(1, input.limit), this.deps.config.maxSearchResults)
+    return { source: target.source, ...searchBlocks(cache, query, limit) }
   }
 
   /**

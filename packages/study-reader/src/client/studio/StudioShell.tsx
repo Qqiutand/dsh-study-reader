@@ -11,6 +11,7 @@ import { InjectionStudio } from './InjectionStudio.tsx'
 import { VerticalResizeHandle } from '../VerticalResizeHandle.tsx'
 import { OverviewDashboard } from './OverviewDashboard.tsx'
 import { useBilingualText } from '../StudyLocale.tsx'
+import { ExternalAccess } from './ExternalAccess.tsx'
 
 const STORAGE_PREFIX = 'dsh.study-reader.studio-section.v1:'
 const TREE_WIDTH_PREFIX = 'dsh.study-reader.studio-tree-width.v1:'
@@ -24,7 +25,7 @@ function storedTreeWidth(sessionId: string): number {
 function storedSection(sessionId: string): StudioSection {
   const value = globalThis.localStorage?.getItem(`${STORAGE_PREFIX}${sessionId}`)
   return value === 'overview' || value === 'library' || value === 'profiles' || value === 'prompts' || value === 'skills' || value === 'tools'
-    || value === 'permissions' || value === 'services' ? value : 'overview'
+    || value === 'permissions' || value === 'external-access' || value === 'services' ? value : 'overview'
 }
 
 export function StudioShell(props: { readonly sessionId: string; readonly studyRemote: StudyRemote | undefined; readonly credentialsApi: MinerUSettingsProps['credentials'] }) {
@@ -70,6 +71,7 @@ export function StudioShell(props: { readonly sessionId: string; readonly studyR
         : section === 'skills' ? <ManagementWorkspace tab="skills" sessionId={props.sessionId} studyRemote={props.studyRemote} {...selection.folderId === undefined ? {} : { folderId: selection.folderId }} />
         : section === 'permissions' ? <ManagementWorkspace tab="permissions" sessionId={props.sessionId} studyRemote={props.studyRemote} />
         : section === 'tools' ? <ToolCatalog sessionId={props.sessionId} studyRemote={props.studyRemote} />
+        : section === 'external-access' ? <ExternalAccess sessionId={props.sessionId} studyRemote={props.studyRemote} />
         : section === 'prompts' || section === 'profiles' ? <InjectionStudio mode={section} sessionId={props.sessionId} studyRemote={props.studyRemote} onStudioChanged={() => setStudioVersion(value => value + 1)} onFolderSelect={folderId => select({ section, ...(folderId === undefined ? {} : { folderId }) })} {...selection.folderId === undefined ? {} : { folderId: selection.folderId }} />
         : section === 'services' ? <MinerUSettings credentials={props.credentialsApi} {...props.studyRemote === undefined ? {} : { studyRemote: props.studyRemote, sessionId: props.sessionId }} />
         : <StudioFoundation section={section} />}

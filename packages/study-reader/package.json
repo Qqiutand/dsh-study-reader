@@ -1,7 +1,7 @@
 {
   "name": "dsh-study-reader",
   "description": "Document library, bounded preview, and evidence tools for DeepSeek Harness",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "main": "lib/types/index.js",
@@ -130,6 +130,7 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-typert-protocol": "link:../../../packages/typert/protocol",
+    "@modelcontextprotocol/server": "^2.0.0",
     "epubjs": "0.3.93",
     "minisearch": "^7.1.2",
     "parse5": "7.3.0",

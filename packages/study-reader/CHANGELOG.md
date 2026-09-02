@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 - 2026-09-02
+
+- Added a loopback-only Streamable HTTP MCP endpoint over the existing Study Reader library. External clients receive only the five read-only Reader tools and never gain import, deletion, note-write, Skill, preset, or conversation-memory access.
+- Added a small browser control plane for selecting a fixed document set, creating an expiring bearer connection, copying Codex configuration, and revoking the connection immediately. Raw tokens are shown only by the create response and are not stored in authorization records.
+- Reused the existing opaque document/passage references and Reader dispatch path, with per-request authorization checks, bounded request/response sizes, DNS-rebinding validation, and regression coverage for the complete HTTP tool flow.
+
 ## 0.6.2 - 2026-09-02
 
 - Rebalanced the Bookroom library column for normal-height browser windows: the search controls, import notice, and conversation shelf are more compact, while the full document-card list receives the remaining height and keeps its own scroll.

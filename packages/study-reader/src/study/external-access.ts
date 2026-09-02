@@ -1,0 +1,195 @@
+/** Durable, least-authority bearer grants for the embedded read-only MCP endpoint. */
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { chmod, mkdir, open as openFile, readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
+import { StudyError } from '../protocol/error.ts'
+import type { ExternalAccessRecord, SourceId } from './types.ts'
+
+const TOKEN_PREFIX = 'dsr_v1'
+const MASTER_KEY_FILE = 'external-mcp.key'
+const COMMAND_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/u
+const ACCESS_ID_PATTERN = /^external-[a-f0-9]{32}$/u
+const TOKEN_SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/u
+
+function errorCode(error: unknown): string | undefined {
+  return error !== null && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined
+}
+
+async function loadOrCreateMasterKey(storageRoot: string): Promise<Buffer> {
+  const path = join(storageRoot, MASTER_KEY_FILE)
+  await mkdir(dirname(path), { recursive: true })
+  try {
+    const handle = await openFile(path, 'wx', 0o600)
+    try {
+      const key = randomBytes(32)
+      await handle.writeFile(`${key.toString('base64url')}\n`, 'utf8')
+      await handle.sync()
+      return key
+    } finally {
+      await handle.close()
+    }
+  } catch (error) {
+    if (errorCode(error) !== 'EEXIST') throw error
+  }
+  const encoded = (await readFile(path, 'utf8')).trim()
+  if (!TOKEN_SIGNATURE_PATTERN.test(encoded)) {
+    throw new Error(`study: ${MASTER_KEY_FILE} is invalid; refusing to rotate external access silently`)
+  }
+  const key = Buffer.from(encoded, 'base64url')
+  if (key.byteLength !== 32) throw new Error(`study: ${MASTER_KEY_FILE} must contain a 32-byte key`)
+  // Repair an accidentally permissive mode before accepting the key. If the
+  // filesystem refuses the repair, startup fails instead of serving tokens
+  // from a key readable by other local users.
+  await chmod(path, 0o600)
+  return key
+}
+
+function payloadHash(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+}
+
+function normalizedLabel(value: string): string {
+  const label = value.trim().normalize('NFC')
+  if (label.length === 0 || label.length > 120 || /[\u0000-\u001f\u007f]/u.test(label)) {
+    throw new StudyError('external access label must contain 1 to 120 printable characters', 'EXTERNAL_ACCESS_LABEL_INVALID')
+  }
+  return label
+}
+
+function assertCommandId(commandId: string): void {
+  if (!COMMAND_PATTERN.test(commandId)) throw new StudyError('external access commandId is invalid', 'EXTERNAL_ACCESS_COMMAND_ID_INVALID')
+}
+
+function tokenState(record: ExternalAccessRecord, now: number): 'active' | 'expired' | 'revoked' {
+  if (record.revokedAt !== undefined) return 'revoked'
+  return record.expiresAt <= now ? 'expired' : 'active'
+}
+
+export interface CreateExternalAccessInput {
+  readonly commandId: string
+  readonly label: string
+  readonly sourceIds: readonly SourceId[]
+  readonly expiresInDays: number
+}
+
+export class ExternalAccessManager {
+  private readonly tails = new Map<string, Promise<void>>()
+
+  private constructor(
+    private readonly records: KvTable<string, ExternalAccessRecord>,
+    private readonly masterKey: Buffer,
+  ) {}
+
+  static async open(records: KvTable<string, ExternalAccessRecord>, storageRoot: string): Promise<ExternalAccessManager> {
+    return new ExternalAccessManager(records, await loadOrCreateMasterKey(storageRoot))
+  }
+
+  list(): readonly ExternalAccessRecord[] {
+    return [...this.records.entries()].map(([, record]) => record)
+      .sort((left, right) => right.createdAt - left.createdAt || left.id.localeCompare(right.id))
+  }
+
+  state(record: ExternalAccessRecord, now = Date.now()): 'active' | 'expired' | 'revoked' {
+    return tokenState(record, now)
+  }
+
+  async create(input: CreateExternalAccessInput): Promise<{ readonly record: ExternalAccessRecord; readonly token: string }> {
+    assertCommandId(input.commandId)
+    const label = normalizedLabel(input.label)
+    const sourceIds = [...new Set(input.sourceIds)].sort((left, right) => String(left).localeCompare(String(right)))
+    if (sourceIds.length === 0 || sourceIds.length > 100) {
+      throw new StudyError('external access requires 1 to 100 documents', 'EXTERNAL_ACCESS_SCOPE_INVALID')
+    }
+    if (!Number.isInteger(input.expiresInDays) || input.expiresInDays < 1 || input.expiresInDays > 365) {
+      throw new StudyError('external access expiry must be between 1 and 365 days', 'EXTERNAL_ACCESS_EXPIRY_INVALID')
+    }
+    const hash = payloadHash({ label, sourceIds, expiresInDays: input.expiresInDays })
+    return await this.lock(`create:${input.commandId}`, async () => {
+      const replay = this.list().find(record => record.createCommandId === input.commandId)
+      if (replay !== undefined) {
+        if (replay.createPayloadHash !== hash) throw new StudyError('commandId was reused with a different external access request', 'COMMAND_ID_CONFLICT')
+        return { record: replay, token: this.tokenFor(replay.id) }
+      }
+      const now = Date.now()
+      const record: ExternalAccessRecord = {
+        schemaVersion: 1,
+        id: `external-${randomUUID().replaceAll('-', '')}`,
+        label,
+        sourceIds,
+        createdAt: now,
+        expiresAt: now + input.expiresInDays * 86_400_000,
+        version: 1,
+        createCommandId: input.commandId,
+        createPayloadHash: hash,
+      }
+      await this.records.put(record.id, record)
+      return { record, token: this.tokenFor(record.id) }
+    })
+  }
+
+  async revoke(accessId: string, commandId: string, expectedVersion: number): Promise<ExternalAccessRecord> {
+    assertCommandId(commandId)
+    if (!ACCESS_ID_PATTERN.test(accessId)) throw new StudyError('external access connection not found', 'EXTERNAL_ACCESS_NOT_FOUND')
+    return await this.lock(`access:${accessId}`, async () => {
+      const record = this.records.get(accessId)
+      if (record === undefined) throw new StudyError('external access connection not found', 'EXTERNAL_ACCESS_NOT_FOUND')
+      if (record.lastCommandId === commandId && record.revokedAt !== undefined) return record
+      if (record.version !== expectedVersion) throw new StudyError('external access version conflict', 'EXTERNAL_ACCESS_VERSION_CONFLICT')
+      const next: ExternalAccessRecord = {
+        ...record,
+        revokedAt: Date.now(),
+        version: record.version + 1,
+        lastCommandId: commandId,
+      }
+      await this.records.put(next.id, next)
+      return next
+    })
+  }
+
+  /** Resolve an already-authenticated connection again so revocation is immediate. */
+  requireActive(accessId: string): ExternalAccessRecord {
+    const record = this.records.get(accessId)
+    if (record === undefined || tokenState(record, Date.now()) !== 'active') {
+      throw new StudyError('external access is unavailable', 'PERMISSION_DENIED')
+    }
+    return record
+  }
+
+  /** Authenticate without revealing whether a token was malformed, expired, or revoked. */
+  authenticate(token: string): ExternalAccessRecord | undefined {
+    if (token.length > 256) return undefined
+    const parts = token.split('.')
+    if (parts.length !== 3 || parts[0] !== TOKEN_PREFIX || !ACCESS_ID_PATTERN.test(parts[1]!) || !TOKEN_SIGNATURE_PATTERN.test(parts[2]!)) return undefined
+    const expected = this.signatureFor(parts[1]!)
+    const actual = Buffer.from(parts[2]!, 'base64url')
+    if (actual.byteLength !== expected.byteLength || !timingSafeEqual(actual, expected)) return undefined
+    const record = this.records.get(parts[1]!)
+    return record !== undefined && tokenState(record, Date.now()) === 'active' ? record : undefined
+  }
+
+  private tokenFor(accessId: string): string {
+    return `${TOKEN_PREFIX}.${accessId}.${this.signatureFor(accessId).toString('base64url')}`
+  }
+
+  private signatureFor(accessId: string): Buffer {
+    return createHmac('sha256', this.masterKey).update(`${TOKEN_PREFIX}\u0000${accessId}`).digest()
+  }
+
+  private async lock<T>(key: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.tails.get(key) ?? Promise.resolve()
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const tail = previous.catch(() => {}).then(() => gate)
+    this.tails.set(key, tail)
+    await previous.catch(() => {})
+    try {
+      return await operation()
+    } finally {
+      release()
+      if (this.tails.get(key) === tail) this.tails.delete(key)
+    }
+  }
+}

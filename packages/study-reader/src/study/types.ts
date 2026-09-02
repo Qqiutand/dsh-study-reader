@@ -210,6 +210,70 @@ export interface WorkspaceDefaultApplicationRecord {
   readonly appliedAt: number
 }
 
+/** Durable authorization for one external, read-only MCP connection. */
+export interface ExternalAccessRecord {
+  readonly schemaVersion: 1
+  readonly id: string
+  readonly label: string
+  /** Exact library sources visible through this connection. */
+  readonly sourceIds: readonly SourceId[]
+  readonly createdAt: number
+  readonly expiresAt: number
+  readonly revokedAt?: number
+  readonly version: number
+  /** Idempotency receipt for the command that created this connection. */
+  readonly createCommandId: string
+  readonly createPayloadHash: string
+  /** Idempotency receipt for the latest state-changing command. */
+  readonly lastCommandId?: string
+}
+
+export interface ExternalAccessView {
+  readonly id: string
+  readonly label: string
+  readonly sourceIds: readonly string[]
+  readonly documentTitles: readonly string[]
+  readonly missingDocumentCount: number
+  readonly state: 'active' | 'expired' | 'revoked'
+  readonly createdAt: number
+  readonly expiresAt: number
+  readonly revokedAt?: number
+  readonly version: number
+}
+
+/** Browser management projection. Tokens are deliberately absent. */
+export interface ExternalAccessSnapshot {
+  readonly enabled: boolean
+  readonly controlMode: 'trusted-local-user' | 'disabled'
+  readonly mcpUrl: string
+  readonly sources: readonly (SourceSummary & { readonly selectedInConversation: boolean })[]
+  readonly connections: readonly ExternalAccessView[]
+}
+
+export interface CreateExternalAccessRequest {
+  readonly sessionId: string
+  readonly commandId: string
+  readonly label: string
+  readonly sourceIds: readonly string[]
+  readonly expiresInDays: number
+}
+
+/** The bearer token is returned only by the explicit create command. */
+export interface CreateExternalAccessResult {
+  readonly connection: ExternalAccessView
+  readonly token: string
+  readonly mcpUrl: string
+  readonly environmentVariable: 'DSH_STUDY_READER_TOKEN'
+  readonly codexConfig: string
+}
+
+export interface RevokeExternalAccessRequest {
+  readonly sessionId: string
+  readonly commandId: string
+  readonly accessId: string
+  readonly expectedVersion: number
+}
+
 /** Browser-safe state of the current Session's owning Workspace default. */
 export type WorkspaceDefaultView =
   | { readonly available: false }

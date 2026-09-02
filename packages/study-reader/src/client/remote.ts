@@ -11,6 +11,8 @@ import type {
   SourceSummary, StudyBootstrapView, ToolDescriptorView,
   ProviderConnectionView,
   WorkspaceDefaultView, SaveWorkspaceDefaultRequest, ClearWorkspaceDefaultRequest,
+  CreateExternalAccessRequest, CreateExternalAccessResult, ExternalAccessSnapshot,
+  ExternalAccessView, RevokeExternalAccessRequest,
 } from '../study/types.ts'
 import type {
   AgentGrant, ManagementFolder, ManagementFolderView, ManagementProposal,
@@ -45,6 +47,9 @@ export interface StudyRemote {
   getWorkspaceDefault(request: { readonly sessionId: string }): Call<WorkspaceDefaultView>
   saveWorkspaceDefault(request: SaveWorkspaceDefaultRequest): Call<WorkspaceDefaultView>
   clearWorkspaceDefault(request: ClearWorkspaceDefaultRequest): Call<WorkspaceDefaultView>
+  externalAccessSnapshot(request: { readonly sessionId: string }): Call<ExternalAccessSnapshot>
+  createExternalAccess(request: CreateExternalAccessRequest): Call<CreateExternalAccessResult>
+  revokeExternalAccess(request: RevokeExternalAccessRequest): Call<ExternalAccessView>
   executeStudioCommand(request: ExecuteInjectionStudioCommandRequest): Call<ExecuteInjectionStudioCommandResult>
   compileInjectionProfile(request: CompileInjectionPreviewRequest): Call<CompiledInjection>
   listTreeChildren(request: ListTreeChildrenRequest): Call<TreeChildrenResult>

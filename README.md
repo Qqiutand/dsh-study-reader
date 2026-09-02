@@ -13,6 +13,7 @@ _Illustrative empty state with no real documents or user data._
 - Persistent PDF/EPUB library with folders.
 - Original-document and MinerU structured previews without saved reading positions, with ZIP export of extraction results.
 - Conversation-scoped document access that keeps unrelated content out of context.
+- Loopback-only MCP access for Codex and other clients, limited to documents selected in the browser.
 - Reusable presets combining prompt injections, Skills, and Tools.
 - Per-folder new-conversation defaults for the currently selected documents and Reader configuration.
 - Official MinerU cloud and compatible local Docker services.
@@ -64,6 +65,25 @@ It removes Reader tool-call count limits for that task only; the next ordinary
 message automatically returns to the bounded policy. Document grants, explicit
 write authorization, per-call timeouts, and exact duplicate-call protection stay active.
 
+### External AI access (MCP)
+
+Open **Bookroom → External AI access**, select the documents for one connection,
+and create it. The page shows a bearer token once and generates the matching
+Codex configuration. Keep `pnpm dsh web` running, export the shown token before
+starting Codex, and add the generated block to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.dsh_reader]
+url = "http://127.0.0.1:PORT/study-reader/mcp"
+bearer_token_env_var = "DSH_STUDY_READER_TOKEN"
+```
+
+The connection exposes only `reader_get_context`, `reader_list_documents`,
+`reader_get_outline`, `reader_search_passages`, and `reader_read_passage`.
+Its document set is fixed until you revoke it and create another connection.
+DSH presets, Skills, conversation memory, imports, deletion, and note writes
+remain inside DSH and are not exposed through MCP.
+
 ## Local development
 
 ```bash
@@ -82,8 +102,9 @@ pnpm dsh web --patch "/absolute/path/to/dsh-study-reader/cordis.patch.yml"
 
 - Imported text is untrusted evidence and is never treated as system instructions.
 - The immutable safety baseline remains active and cannot be disabled by presets.
-- Secrets are stored by the Harness Credential Service and are not returned to the browser.
+- MinerU credentials are stored by the Harness Credential Service and are not returned to the browser.
 - Document access is isolated to the current conversation.
+- External MCP is loopback-only. Tokens are shown only when created, are not stored in grant records, expire automatically, and can be revoked from the browser.
 
 ## License
 

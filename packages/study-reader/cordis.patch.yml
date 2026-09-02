@@ -73,6 +73,8 @@
         storageRoot: !!js dshHomePath('study-reader')
         uploadRoute: /study-reader/upload
         assetRoute: /study-reader/assets
+        externalMcpEnabled: true
+        externalMcpRoute: /study-reader/mcp
         uploadTicketTtlMs: 900000
         maxFileBytes: 209715200
         maxProviderPagesPerPart: 200

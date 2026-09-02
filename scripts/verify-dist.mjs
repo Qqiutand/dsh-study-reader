@@ -104,6 +104,9 @@ for (const stray of ['@xyflow/react', '@dagrejs/dagre', 'typescript', 'vitest', 
 if (manifest.peerDependencies?.['react-dom'] !== '^18.2.0') {
   errors.push('react-dom must remain a Harness peer dependency')
 }
+if (manifest.dependencies?.['@modelcontextprotocol/server'] !== '^2.0.0') {
+  errors.push('@modelcontextprotocol/server must remain a pinned registry runtime dependency')
+}
 
 // Runtime files: every exports target and the bundle patch.
 for (const [subpath, target] of exportTargets(manifest)) {

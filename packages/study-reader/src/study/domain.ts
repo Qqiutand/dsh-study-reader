@@ -72,6 +72,20 @@ const workspaceDefaultApplicationSchema = z.object({
   appliedAt: z.number(),
 })
 
+const externalAccessRecordSchema = z.object({
+  schemaVersion: z.literal(1),
+  id: z.string().regex(/^external-[a-f0-9]{32}$/u),
+  label: z.string().min(1).max(120),
+  sourceIds: z.array(z.string()).min(1).max(100),
+  createdAt: z.number(),
+  expiresAt: z.number(),
+  revokedAt: z.number().optional(),
+  version: z.number().int().positive(),
+  createCommandId: z.string().min(1).max(128),
+  createPayloadHash: sha256Schema,
+  lastCommandId: z.string().min(1).max(128).optional(),
+})
+
 const outlineItemSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -372,6 +386,7 @@ export const studyDomain = defineDomain({
     source_access: domainTable<string, z.infer<typeof sourceAccessRecordSchema>>(sourceAccessRecordSchema),
     workspace_defaults: domainTable<string, z.infer<typeof workspaceDefaultRecordSchema>>(workspaceDefaultRecordSchema),
     workspace_default_applications: domainTable<string, z.infer<typeof workspaceDefaultApplicationSchema>>(workspaceDefaultApplicationSchema),
+    external_access: domainTable<string, z.infer<typeof externalAccessRecordSchema>>(externalAccessRecordSchema),
     revisions: domainTable<RevisionId, z.infer<typeof revisionRecordSchema>>(z.union([revisionRecordSchema, legacyRevisionRecordSchema]) as unknown as z.ZodType<z.infer<typeof revisionRecordSchema>>),
     imports: domainTable<ImportId, z.infer<typeof importRecordSchema>>(importRecordSchema),
     extraction_artifact_sets: domainTable<ExtractionArtifactSetId, z.infer<typeof extractionArtifactSetRecordSchema>>(extractionArtifactSetRecordSchema),
@@ -412,6 +427,7 @@ export {
   sourceAccessRecordSchema,
   workspaceDefaultRecordSchema,
   workspaceDefaultApplicationSchema,
+  externalAccessRecordSchema,
   studyEventRecordSchema,
   managementFolderSchema,
   managementGrantSchema,

@@ -4,7 +4,7 @@ import type { AssetFolderView, AssetNamespace, AssetTreeCommand } from '../../st
 import type { StudyRemote } from '../remote.ts'
 import { useBilingualText, type BilingualText } from '../StudyLocale.tsx'
 
-export type StudioSection = 'overview' | 'library' | 'profiles' | 'prompts' | 'skills' | 'tools' | 'permissions' | 'services'
+export type StudioSection = 'overview' | 'library' | 'profiles' | 'prompts' | 'skills' | 'tools' | 'permissions' | 'external-access' | 'services'
 export interface StudioTreeSelection { readonly section: StudioSection; readonly folderId?: string }
 type FolderDialog =
   | { readonly kind: 'create'; readonly namespace: AssetNamespace; readonly parentId?: string }
@@ -18,6 +18,7 @@ const localizedSections = (b: BilingualText): readonly SectionRow[] => [
   { id: 'prompts', label: b('提示词注入', 'Prompt injections'), description: b('管理回答方式与边界', 'Manage response behavior and boundaries'), namespace: 'prompt', group: b('助手设置', 'Assistant settings') },
   { id: 'skills', label: 'Skills', description: b('专项方法与适用条件', 'Specialized methods and conditions'), namespace: 'skill', group: b('助手设置', 'Assistant settings') },
   { id: 'tools', label: 'Tools', description: b('当前可用的文献能力', 'Available document capabilities'), group: b('助手设置', 'Assistant settings') },
+  { id: 'external-access', label: b('外部 AI 访问', 'External AI access'), description: b('按文献授权 MCP 连接', 'Grant MCP access by document'), group: b('连接与权限', 'Connections and access') },
   { id: 'permissions', label: b('访问权限', 'Access'), description: b('当前会话能力边界', 'Conversation capability boundaries'), group: b('连接与权限', 'Connections and access') },
   { id: 'services', label: b('服务连接', 'Service connections'), description: b('解析服务和凭据状态', 'Extraction services and credentials'), group: b('连接与权限', 'Connections and access') },
 ]

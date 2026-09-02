@@ -15,6 +15,10 @@ export class TurnResourceMap {
   private readonly passageByRef = new Map<string, StoredPassage>()
   private readonly passageRefByKey = new Map<string, string>()
 
+  constructor(private readonly maximumPassages = Number.POSITIVE_INFINITY) {
+    if (!(maximumPassages > 0)) throw new Error('maximumPassages must be positive')
+  }
+
   publishDocument(document: HostDocument): PublicDocumentReference {
     let documentRef = this.documentRefById.get(document.id)
     if (documentRef === undefined) {
@@ -30,6 +34,7 @@ export class TurnResourceMap {
     const key = `${passage.documentId}\u0000${passage.passageId}`
     let passageRef = this.passageRefByKey.get(key)
     if (passageRef === undefined) {
+      this.evictOldestPassageIfNeeded()
       passageRef = `passage_${++this.passageSequence}`
       this.passageRefByKey.set(key, passageRef)
       this.passageByRef.set(passageRef, { documentId: passage.documentId, passageId: passage.passageId })
@@ -47,6 +52,15 @@ export class TurnResourceMap {
     const passage = this.passageByRef.get(passageRef)
     if (passage === undefined) throw new ResourceResolutionError('RESOURCE_NOT_FOUND', `段落引用 ${passageRef} 在当前轮次中不存在`)
     return passage
+  }
+
+  private evictOldestPassageIfNeeded(): void {
+    if (this.passageByRef.size < this.maximumPassages) return
+    const oldest = this.passageByRef.entries().next().value as [string, StoredPassage] | undefined
+    if (oldest === undefined) return
+    const [passageRef, passage] = oldest
+    this.passageByRef.delete(passageRef)
+    this.passageRefByKey.delete(`${passage.documentId}\u0000${passage.passageId}`)
   }
 }
 

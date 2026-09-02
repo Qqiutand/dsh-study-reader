@@ -13,6 +13,7 @@ _空白状态示意图，不包含真实文献或用户数据。_
 - 持久化文献库与文件夹管理，支持 PDF 和 EPUB。
 - 预览原文件和 MinerU 结构化内容（不记录阅读位置），并将识别结果导出为 ZIP。
 - 按当前对话授权文献，避免无关内容进入上下文。
+- 可在浏览器中选择文献，为 Codex 等客户端创建仅限本机的只读 MCP 连接。
 - 将提示词注入、Skills 和 Tools 保存为可复用的配置预设。
 - 可按工作文件夹保存新会话默认的文献与 Reader 配置。
 - 支持 MinerU 官方云端和兼容的本地 Docker 服务。
@@ -62,6 +63,24 @@ pnpm run install:dsh -- \
 它只为这一次任务取消 Reader 工具的调用次数限制；下一条普通消息自动恢复。
 文献权限、显式写入授权、单次超时和完全重复调用拦截不会被关闭。
 
+### 外部 AI 访问（MCP）
+
+打开 **书房 → 外部 AI 访问**，勾选这个连接可以读取的文献，然后生成连接。
+页面只显示一次 Bearer Token，并给出对应的 Codex 配置。保持
+`pnpm dsh web` 运行，在启动 Codex 前导出页面给出的 Token，再把生成的配置写入
+`~/.codex/config.toml`：
+
+```toml
+[mcp_servers.dsh_reader]
+url = "http://127.0.0.1:PORT/study-reader/mcp"
+bearer_token_env_var = "DSH_STUDY_READER_TOKEN"
+```
+
+这个连接只提供 `reader_get_context`、`reader_list_documents`、
+`reader_get_outline`、`reader_search_passages` 和 `reader_read_passage`。
+授权的文献集合保持不变；需要换书时，撤销旧连接并重新创建即可。DSH 的配置预设、
+Skills、会话记忆、导入、删除和笔记写入仍留在 DSH 内部，不会通过 MCP 暴露。
+
 ## 本地开发
 
 ```bash
@@ -80,8 +99,9 @@ pnpm dsh web --patch "/你的绝对路径/dsh-study-reader/cordis.patch.yml"
 
 - 导入的正文是不可信证据，不会被当作系统指令。
 - 不可变安全基线始终生效，不能被配置预设关闭。
-- 密钥由 Harness Credential Service 保存，不会返回浏览器。
+- MinerU 密钥由 Harness Credential Service 保存，不会返回浏览器。
 - 文献访问权限按当前对话隔离。
+- 外部 MCP 只接受本机连接。Token 仅在创建时显示，不写入授权记录；它会自动过期，也可以随时在浏览器中撤销。
 
 ## 许可证
 

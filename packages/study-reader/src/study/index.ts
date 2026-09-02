@@ -21,7 +21,7 @@ import { StudyPoller } from './poller.ts'
 import { migrateLegacyImports } from './import-migration.ts'
 import type { PollerConfig } from './poller.ts'
 import { StudyService, type StudyServiceConfig } from './study-service.ts'
-import type { ArtifactId, ArtifactRecord, DossierId, DossierRecord, ExtractionArtifactSetId, ExtractionArtifactSetRecord, ImportId, ImportRecord, ReprocessOperationId, ReprocessOperationRecord, RevisionId, RevisionRecord, SourceAccessRecord, SourceId, SourceRecord, StudyEventRecord, WorkspaceDefaultApplicationRecord, WorkspaceDefaultRecord } from './types.ts'
+import type { ArtifactId, ArtifactRecord, DossierId, DossierRecord, ExternalAccessRecord, ExtractionArtifactSetId, ExtractionArtifactSetRecord, ImportId, ImportRecord, ReprocessOperationId, ReprocessOperationRecord, RevisionId, RevisionRecord, SourceAccessRecord, SourceId, SourceRecord, StudyEventRecord, WorkspaceDefaultApplicationRecord, WorkspaceDefaultRecord } from './types.ts'
 import type { AgentGrant, ManagementCommandRecord, ManagementDeletionOperation, ManagementFolder, ManagementProposal, SourceLocation, StudySkill } from './management.ts'
 import type { AssetFolderRecord, InjectionProfileRecord, InjectionStudioCommandReceipt, PromptAssetRecord, ProviderConnectionCommandReceipt, ProviderConnectionRecord, SessionInjectionBinding } from '../studio/types.ts'
 import { applyCompiledInjection } from '../studio/runtime-injection.ts'
@@ -35,6 +35,8 @@ import { UploadRegistry } from './upload.ts'
 import { managedProfileSkillProvider } from './managed-skill-provider.ts'
 import { bundledReaderSkillProvider } from './bundled-reader-skill-provider.ts'
 import { filterNativeReaderSkillMessages, readerSkillMessageSource } from './reader-skill-catalog.ts'
+import { ExternalAccessManager } from './external-access.ts'
+import { ExternalMcpEndpoint } from './mcp-endpoint.ts'
 
 /** Cordis plugin name of the study row. */
 export const name = 'study'
@@ -49,6 +51,10 @@ export interface StudyConfig {
   uploadRoute: string
   /** Route prefix for original PDF and revision-scoped image assets. */
   assetRoute: string
+  /** Mount a loopback-only, browser-authorized read-only MCP endpoint. */
+  externalMcpEnabled?: boolean
+  /** Exact Streamable HTTP MCP pathname. */
+  externalMcpRoute?: string
   /** Upload-token lifetime in milliseconds. */
   uploadTicketTtlMs: number
   /** Hard ceiling on one uploaded file. */
@@ -109,6 +115,8 @@ export const Config: z<StudyConfig> = z.object({
   storageRoot: z.string().required(),
   uploadRoute: z.string().required(),
   assetRoute: z.string().default('/study-reader/assets'),
+  externalMcpEnabled: z.boolean().default(true),
+  externalMcpRoute: z.string().default('/study-reader/mcp'),
   uploadTicketTtlMs: z.number().min(1).required(),
   maxFileBytes: z.number().min(1).required(),
   maxProviderPagesPerPart: z.number().min(1).default(200),
@@ -145,7 +153,7 @@ export const Config: z<StudyConfig> = z.object({
 })
 
 /** Resolve validated config into the service policy shape. */
-function resolveConfig(config: StudyConfig): { service: StudyServiceConfig; poller: PollerConfig } {
+function resolveConfig(config: StudyConfig, externalMcpUrl: string): { service: StudyServiceConfig; poller: PollerConfig } {
   const service: StudyServiceConfig = {
     uploadRoute: config.uploadRoute,
     assetRoute: config.assetRoute,
@@ -167,6 +175,8 @@ function resolveConfig(config: StudyConfig): { service: StudyServiceConfig; poll
     defaultEnableFormula: config.defaultEnableFormula ?? true,
     acceptExtensions: config.acceptExtensions ?? [],
     managementControlMode: config.managementControlMode ?? 'trusted-local-user',
+    externalMcpEnabled: config.externalMcpEnabled ?? true,
+    externalMcpUrl,
   }
   const poller: PollerConfig = {
     pollTickMs: config.pollTickMs,
@@ -212,7 +222,12 @@ export { StudyError } from '../protocol/error.ts'
  * @returns resolution after the domain opens and the poller resumes.
  */
 export async function apply(ctx: Context, config: StudyConfig): Promise<void> {
-  const { service: serviceConfig, poller: pollerConfig } = resolveConfig(config)
+  const externalMcpRoute = config.externalMcpRoute ?? '/study-reader/mcp'
+  if (!/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+$/u.test(externalMcpRoute) || externalMcpRoute.endsWith('/') || externalMcpRoute.length > 200) {
+    throw new Error('study: externalMcpRoute must be an absolute pathname without a trailing slash')
+  }
+  const externalMcpUrl = `http://127.0.0.1:${String(ctx.webServer.port)}${externalMcpRoute}`
+  const { service: serviceConfig, poller: pollerConfig } = resolveConfig(config, externalMcpUrl)
   const lifecycle = new AbortController()
   const domain = ctx.studyBlobLifecycle.domain
   const sourceTable = domain.table('sources') as unknown as KvTable<SourceId, SourceRecord>
@@ -254,6 +269,10 @@ export async function apply(ctx: Context, config: StudyConfig): Promise<void> {
     }, 'study: blob GC timer')
   }
   const uploads = new UploadRegistry(config.uploadTicketTtlMs)
+  const externalAccess = await ExternalAccessManager.open(
+    domain.table('external_access') as unknown as KvTable<string, ExternalAccessRecord>,
+    config.storageRoot,
+  )
   // The constructor registers the `study` service and its Remote binding.
   // The domain tables store zod-projected plain strings; the branded record
   // view is a same-process type projection at this boundary.
@@ -264,6 +283,7 @@ export async function apply(ctx: Context, config: StudyConfig): Promise<void> {
     sourceAccess: domain.table('source_access') as unknown as KvTable<string, SourceAccessRecord>,
     workspaceDefaults: domain.table('workspace_defaults') as unknown as KvTable<string, WorkspaceDefaultRecord>,
     workspaceDefaultApplications: domain.table('workspace_default_applications') as unknown as KvTable<string, WorkspaceDefaultApplicationRecord>,
+    externalAccess,
     revisions: domain.table('revisions') as unknown as KvTable<RevisionId, RevisionRecord>,
     imports: domain.table('imports') as unknown as KvTable<ImportId, ImportRecord>,
     artifactSets: domain.table('extraction_artifact_sets') as unknown as KvTable<ExtractionArtifactSetId, ExtractionArtifactSetRecord>,
@@ -429,6 +449,24 @@ export async function apply(ctx: Context, config: StudyConfig): Promise<void> {
     path: config.assetRoute,
     handler: assets.routeHandler(),
   }), 'study.assetRoute')
+
+  if (config.externalMcpEnabled ?? true) {
+    const externalMcp = new ExternalMcpEndpoint(
+      service,
+      name => ctx.logger.warn(`study: MCP protocol error (${name})`),
+    )
+    ctx.effect(() => {
+      const unregister = ctx.webServer.register({
+        kind: 'exact',
+        path: externalMcpRoute,
+        handler: externalMcp.routeHandler(),
+      })
+      return async () => {
+        unregister()
+        await externalMcp.close()
+      }
+    }, 'study.externalMcpRoute')
+  }
 
   ctx.effect(() => {
     const stop = poller.start()

@@ -15,6 +15,7 @@
  * parse5, yauzl)
  * stay in dependencies. Dev-only tools and the browser-bundled graph
  * libraries (@xyflow/react, @dagrejs/dagre) never enter the dist manifest.
+ * The MCP server SDK remains an ordinary registry runtime dependency.
  *
  * Usage: `pnpm run pack:dist` (builds first, then packs and verifies).
  */
@@ -56,6 +57,7 @@ const HARNESS_PEERS = new Map([
 
 /** Registry (non-harness) dependency ranges preserved from the source manifest. */
 const REGISTRY_RANGES = new Map([
+  ['@modelcontextprotocol/server', '^2.0.0'],
   ['zod', '^4.4.3'],
   ['minisearch', '^7.1.2'],
   ['pdf-lib', '^1.17.1'],

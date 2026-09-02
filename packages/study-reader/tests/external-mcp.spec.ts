@@ -1,0 +1,118 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { disposeHarnesses, eventually, pdfFixture, setupStudy, type StudyHarness } from './helpers.ts'
+
+async function importReadySource(harness: StudyHarness, fileName: string) {
+  const existingIds = new Set(harness.ctx.study.listSources().map(source => source.id))
+  harness.server.mode = { pollSequence: ['done'] }
+  const pdf = await pdfFixture()
+  const prepared = await harness.ctx.study.prepareUploadForClient({ fileName, sizeBytes: pdf.byteLength })
+  const upload = await fetch(`http://127.0.0.1:${String(harness.ctx.webServer.port)}${prepared.uploadPath}`, {
+    method: 'PUT',
+    headers: { 'X-Study-Upload-Token': prepared.uploadToken, 'Content-Length': String(pdf.byteLength) },
+    body: Buffer.from(pdf),
+  })
+  expect(upload.status).toBe(200)
+  await eventually(() => harness.ctx.study.importStatusForClient({ importId: prepared.importId }).state === 'ready')
+  return harness.ctx.study.listSources().find(source => !existingIds.has(source.id))!
+}
+
+interface RpcResult {
+  readonly response: Response
+  readonly body: Record<string, unknown>
+  readonly text: string
+}
+
+async function rpc(harness: StudyHarness, token: string | undefined, id: number, method: string, params: Record<string, unknown> = {}): Promise<RpcResult> {
+  const headers: Record<string, string> = {
+    accept: 'application/json, text/event-stream',
+    'content-type': 'application/json',
+  }
+  if (token !== undefined) headers.authorization = `Bearer ${token}`
+  const response = await fetch(`http://127.0.0.1:${String(harness.ctx.webServer.port)}/study-reader/mcp`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+  })
+  const text = await response.text()
+  const payload = response.headers.get('content-type')?.includes('text/event-stream') === true
+    ? text.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).filter(Boolean).at(-1)
+    : text
+  const body = payload === undefined || payload === '' || response.headers.get('content-type')?.includes('text/plain') === true
+    ? {}
+    : JSON.parse(payload) as Record<string, unknown>
+  return { response, body, text }
+}
+
+function rpcResult(value: RpcResult): Record<string, unknown> {
+  expect(value.response.status).toBe(200)
+  expect(value.body).not.toHaveProperty('error')
+  return value.body.result as Record<string, unknown>
+}
+
+afterEach(async () => await disposeHarnesses())
+
+describe('embedded external MCP', () => {
+  it('exposes only fixed-scope Reader tools and rejects the token immediately after revocation', async () => {
+    const harness = await setupStudy()
+    const source = await importReadySource(harness, 'granted-evidence.pdf')
+    const hiddenSource = await importReadySource(harness, 'hidden-evidence.pdf')
+    const created = await harness.ctx.study.createExternalAccessForClient({
+      sessionId: 'mcp-test',
+      commandId: 'create-mcp-test',
+      label: 'Codex test',
+      sourceIds: [source.id],
+      expiresInDays: 7,
+    })
+
+    const unauthorized = await rpc(harness, undefined, 1, 'initialize', {
+      protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' },
+    })
+    expect(unauthorized.response.status).toBe(401)
+    expect(unauthorized.response.headers.get('www-authenticate')).toBe('Bearer')
+
+    rpcResult(await rpc(harness, created.token, 2, 'initialize', {
+      protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' },
+    }))
+    const listed = rpcResult(await rpc(harness, created.token, 3, 'tools/list'))
+    expect((listed.tools as readonly { readonly name: string }[]).map(tool => tool.name)).toEqual([
+      'reader_get_context', 'reader_list_documents', 'reader_get_outline', 'reader_search_passages', 'reader_read_passage',
+    ])
+    expect((listed.tools as readonly { readonly name: string }[]).some(tool => tool.name === 'reader_save_note')).toBe(false)
+
+    const context = rpcResult(await rpc(harness, created.token, 4, 'tools/call', { name: 'reader_get_context', arguments: {} }))
+    const contextData = (context.structuredContent as { readonly data: { readonly library: { readonly documents: readonly { readonly documentRef: string }[] } } }).data
+    const documentRef = contextData.library.documents[0]!.documentRef
+    expect(contextData.library.documents).toHaveLength(1)
+    expect(documentRef).toMatch(/^doc_\d+$/u)
+    expect(JSON.stringify(context)).not.toContain(String(source.id))
+    expect(JSON.stringify(context)).not.toContain(hiddenSource.title)
+
+    const hidden = rpcResult(await rpc(harness, created.token, 5, 'tools/call', {
+      name: 'reader_get_outline',
+      arguments: { document: { kind: 'document_title', title: hiddenSource.title } },
+    }))
+    expect(hidden.structuredContent).toMatchObject({ status: 'error', error: { code: 'DOCUMENT_NOT_FOUND' } })
+
+    const searched = rpcResult(await rpc(harness, created.token, 6, 'tools/call', {
+      name: 'reader_search_passages',
+      arguments: { query: '核心问题', scope: { kind: 'document_ref', documentRef }, limit: 3 },
+    }))
+    const searchData = (searched.structuredContent as { readonly data: { readonly results: readonly { readonly passageRef: string }[] } }).data
+    expect(searchData.results[0]?.passageRef).toMatch(/^passage_\d+$/u)
+
+    const read = rpcResult(await rpc(harness, created.token, 7, 'tools/call', {
+      name: 'reader_read_passage',
+      arguments: { target: { kind: 'passage_ref', passageRef: searchData.results[0]!.passageRef }, window: 1 },
+    }))
+    expect(JSON.stringify(read)).toContain('社会科学的核心问题')
+
+    await harness.ctx.study.revokeExternalAccessForClient({
+      sessionId: 'mcp-test',
+      commandId: 'revoke-mcp-test',
+      accessId: created.connection.id,
+      expectedVersion: created.connection.version,
+    })
+    const revoked = await rpc(harness, created.token, 8, 'tools/list')
+    expect(revoked.response.status).toBe(401)
+  })
+})
