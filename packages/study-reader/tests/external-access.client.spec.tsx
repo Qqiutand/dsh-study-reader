@@ -87,10 +87,20 @@ describe('ExternalAccess', () => {
     renderAccess({ externalAccessSnapshot, saveExternalReadingSet })
 
     expect(await screen.findByRole('heading', { name: '外部 AI 访问' })).toBeTruthy()
+    expect(screen.getByText('书单标识（setRef）')).toBeTruthy()
+    expect(screen.getByText('AI 用它选择这份书单；需要时可复制到对话中。')).toBeTruthy()
+    expect(screen.getByText('set_default')).toBeTruthy()
     expect((screen.getByLabelText('所属连接') as HTMLSelectElement).value).toBe(connection.id)
     fireEvent.change(screen.getByRole('combobox', { name: '文献分类' }), { target: { value: 'uncategorized' } })
     expect(screen.queryByRole('checkbox', { name: /Probability/u })).toBeNull()
     fireEvent.click(screen.getByRole('checkbox', { name: /Optics/u }))
+    fireEvent.change(screen.getByRole('combobox', { name: '文献分类' }), { target: { value: 'selected' } })
+    expect(screen.getByRole('option', { name: '已勾选 (2)' })).toBeTruthy()
+    const selectedProbability = screen.getByRole('checkbox', { name: /Probability/u }) as HTMLInputElement
+    expect(selectedProbability.checked).toBe(true)
+    expect(selectedProbability.closest('label')?.dataset.selected).toBe('true')
+    expect((screen.getByRole('checkbox', { name: /Optics/u }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2)
     fireEvent.change(screen.getByLabelText('书单名称'), { target: { value: 'Optics' } })
     fireEvent.click(screen.getAllByRole('button', { name: '添加书单' })[0]!)
 
@@ -100,5 +110,24 @@ describe('ExternalAccess', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]!)
     expect(screen.getByDisplayValue('Probability')).toBeTruthy()
+  })
+
+  it('hides revoked connections from the management list', async () => {
+    const revokedConnection = { ...connection, id: 'external-22222222222222222222222222222222', label: 'SSH', state: 'revoked' as const }
+    const initialSnapshot = { ...baseSnapshot, connections: [connection, revokedConnection] }
+    const afterRevokeSnapshot = { ...baseSnapshot, connections: [{ ...connection, state: 'revoked' as const }, revokedConnection] }
+    const externalAccessSnapshot = vi.fn()
+      .mockResolvedValueOnce({ ok: true as const, value: initialSnapshot })
+      .mockResolvedValue({ ok: true as const, value: afterRevokeSnapshot })
+    const revokeExternalAccess = vi.fn(async () => ({ ok: true as const, value: { ...connection, state: 'revoked' as const } }))
+    renderAccess({ externalAccessSnapshot, revokeExternalAccess })
+
+    expect(await screen.findByRole('button', { name: '撤销连接' })).toBeTruthy()
+    expect(screen.queryByText('SSH')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '撤销连接' }))
+
+    await waitFor(() => expect(revokeExternalAccess).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('还没有外部连接。')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '撤销连接' })).toBeNull()
   })
 })

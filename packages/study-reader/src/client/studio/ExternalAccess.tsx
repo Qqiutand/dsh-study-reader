@@ -94,6 +94,7 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
   const readySources = useMemo(() => snapshot?.sources.filter(source => source.revisionId !== undefined) ?? [], [snapshot])
   const conversationSourceIds = useMemo(() => readySources.filter(source => source.selectedInConversation).map(source => String(source.id)), [readySources])
   const activeConnections = useMemo(() => snapshot?.connections.filter(connection => connection.state === 'active') ?? [], [snapshot])
+  const listedConnections = useMemo(() => snapshot?.connections.filter(connection => connection.state !== 'revoked') ?? [], [snapshot])
   const targetConnection = useMemo(() => activeConnections.find(connection => connection.id === targetAccessId), [activeConnections, targetAccessId])
   const folderParentById = useMemo(() => new Map(snapshot?.folders.map(folder => [folder.id, folder.parentId]) ?? []), [snapshot])
   const folderNameById = useMemo(() => new Map(snapshot?.folders.map(folder => [folder.id, folder.name]) ?? []), [snapshot])
@@ -112,10 +113,14 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
     const needle = query.trim().toLocaleLowerCase()
     return readySources.filter(source => {
       const matchesFolder = folderFilter === 'all'
-        || (folderFilter === 'uncategorized' ? source.folderId === undefined : isInsideFolder(source.folderId, folderFilter, folderParentById))
+        || (folderFilter === 'selected'
+          ? selectedIds.has(String(source.id))
+          : folderFilter === 'uncategorized'
+            ? source.folderId === undefined
+            : isInsideFolder(source.folderId, folderFilter, folderParentById))
       return matchesFolder && (needle === '' || source.title.toLocaleLowerCase().includes(needle) || source.authors?.some(author => author.toLocaleLowerCase().includes(needle)))
     })
-  }, [folderFilter, folderParentById, query, readySources])
+  }, [folderFilter, folderParentById, query, readySources, selectedIds])
   const canManage = snapshot?.enabled === true && snapshot.controlMode === 'trusted-local-user' && props.studyRemote !== undefined
   const creatingConnection = targetAccessId === 'new'
   const mcpServerNameValid = MCP_SERVER_NAME_PATTERN.test(mcpServerName)
@@ -246,12 +251,12 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
           {creatingConnection ? <label>{b('连接有效期', 'Connection expiry')}<select aria-label={b('连接有效期', 'Connection expiry')} value={expiresInDays} disabled={!canManage || busy} onChange={event => setExpiresInDays(Number(event.currentTarget.value))}><option value={30}>{b('30 天', '30 days')}</option><option value={90}>{b('90 天', '90 days')}</option><option value={365}>{b('365 天', '365 days')}</option></select></label> : null}
         </div>
         <div className="dsh-external-access-source-presets">
-          <label>{b('文献分类', 'Document category')}<select aria-label={b('文献分类', 'Document category')} value={folderFilter} onChange={event => setFolderFilter(event.currentTarget.value)}><option value="all">{b(`全部文献 (${String(readySources.length)})`, `All documents (${String(readySources.length)})`)}</option><option value="uncategorized">{b(`未分类 (${String(readySources.filter(source => source.folderId === undefined).length)})`, `Uncategorized (${String(readySources.filter(source => source.folderId === undefined).length)})`)}</option>{folderOptions.map(folder => <option key={folder.id} value={folder.id}>{folder.path} ({readySources.filter(source => isInsideFolder(source.folderId, folder.id, folderParentById)).length})</option>)}</select></label>
+          <label>{b('文献分类', 'Document category')}<select aria-label={b('文献分类', 'Document category')} value={folderFilter} onChange={event => setFolderFilter(event.currentTarget.value)}><option value="all">{b(`全部文献 (${String(readySources.length)})`, `All documents (${String(readySources.length)})`)}</option><option value="selected">{b(`已勾选 (${String(selectedIds.size)})`, `Selected (${String(selectedIds.size)})`)}</option><option value="uncategorized">{b(`未分类 (${String(readySources.filter(source => source.folderId === undefined).length)})`, `Uncategorized (${String(readySources.filter(source => source.folderId === undefined).length)})`)}</option>{folderOptions.map(folder => <option key={folder.id} value={folder.id}>{folder.path} ({readySources.filter(source => isInsideFolder(source.folderId, folder.id, folderParentById)).length})</option>)}</select></label>
           <button type="button" disabled={!canManage || busy || conversationSourceIds.length === 0} onClick={() => { setSelectedIds(new Set(conversationSourceIds)); setNotice(b(`已载入本次对话的 ${String(conversationSourceIds.length)} 篇文献。`, `Loaded ${String(conversationSourceIds.length)} documents from this conversation.`)) }}>{b(`使用本次对话 (${String(conversationSourceIds.length)})`, `Use current conversation (${String(conversationSourceIds.length)})`)}</button>
         </div>
         <div className="dsh-external-access-source-toolbar"><input type="search" aria-label={b('筛选文献', 'Filter documents')} placeholder={b('按标题或作者筛选', 'Filter by title or author')} value={query} onChange={event => setQuery(event.currentTarget.value)} /><button type="button" disabled={!canManage || busy || visibleSources.length === 0} onClick={() => setSelectedIds(current => new Set([...current, ...visibleSources.map(source => String(source.id))]))}>{b('选择当前列表', 'Select current list')}</button><button type="button" disabled={!canManage || busy} onClick={() => setSelectedIds(new Set())}>{b('清空', 'Clear')}</button></div>
         <div className="dsh-external-access-sources">
-          {visibleSources.length === 0 ? <p>{b('没有可选文献。', 'No selectable documents.')}</p> : visibleSources.map(source => <label key={String(source.id)}>
+          {visibleSources.length === 0 ? <p>{folderFilter === 'selected' ? b('还没有勾选文献。', 'No documents selected yet.') : b('没有可选文献。', 'No selectable documents.')}</p> : visibleSources.map(source => <label key={String(source.id)} data-selected={selectedIds.has(String(source.id))}>
             <input type="checkbox" checked={selectedIds.has(String(source.id))} disabled={!canManage || busy} onChange={() => toggle(String(source.id))} />
             <span><strong>{source.title}</strong><small>{[source.format?.toUpperCase(), source.authors?.join(', '), source.folderId === undefined ? b('未分类', 'Uncategorized') : folderNameById.get(source.folderId), source.selectedInConversation ? b('本次对话', 'Current conversation') : undefined].filter(Boolean).join(' · ')}</small></span>
           </label>)}
@@ -260,14 +265,15 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
       </section>
 
       <section className="dsh-external-access-panel">
-        <header><div><h2>{b('连接与书单', 'Connections and reading sets')}</h2><p>{b('连接负责认证；书单负责划分文献。修改书单不会要求重新配置 Codex。', 'Connections authenticate; reading sets organize documents. Editing a set does not require reconfiguring Codex.')}</p></div><strong>{activeConnections.length}</strong></header>
+        <header><div><h2>{b('连接与书单', 'Connections and reading sets')}</h2><p>{b('一条连接可以包含多份书单。连接负责认证，书单决定 AI 可查阅的文献；修改书单不会改变 Codex 配置。', 'One connection can contain multiple reading sets. The connection authenticates; each set determines which documents AI can access. Editing a set does not change the Codex configuration.')}</p></div><strong>{listedConnections.length}</strong></header>
         <div className="dsh-external-access-connections">
-          {(snapshot?.connections.length ?? 0) === 0 ? <p>{b('还没有外部连接。', 'No external connections yet.')}</p> : snapshot?.connections.map(connection => <article key={connection.id} data-state={connection.state}>
+          {listedConnections.length === 0 ? <p>{b('还没有外部连接。', 'No external connections yet.')}</p> : listedConnections.map(connection => <article key={connection.id} data-state={connection.state}>
             <div><strong>{connection.label}</strong><span>{connection.state === 'active' ? b('可用', 'Active') : connection.state === 'expired' ? b('已过期', 'Expired') : b('已撤销', 'Revoked')}</span></div>
             <code>{connection.mcpServerName}</code><small>{b('到期', 'Expires')}: {formatDate(connection.expiresAt)}</small>
             <div className="dsh-external-access-set-list">{connection.readingSets.map(readingSet => <section key={readingSet.setRef} className="dsh-external-access-set">
-              <div><strong>{readingSet.label}</strong><code>{readingSet.setRef}</code></div>
+              <div><strong>{readingSet.label}</strong></div>
               <p>{readingSetDocuments(readingSet, b('篇文献已不存在', 'documents no longer exist')) || b('没有可用文献', 'No available documents')}</p>
+              <div className="dsh-external-access-set-ref"><span>{b('书单标识（setRef）', 'Set identifier (setRef)')}</span><code>{readingSet.setRef}</code><button type="button" title={b('复制书单标识', 'Copy set identifier')} onClick={() => void copy(readingSet.setRef, b('书单标识已复制。', 'Set identifier copied.'))}>{b('复制', 'Copy')}</button><small>{b('AI 用它选择这份书单；需要时可复制到对话中。', 'AI uses this to select the reading set; copy it into a conversation when needed.')}</small></div>
               <small>{readingSet.sourceIds.length} {b('篇文献', 'documents')}</small>
               {connection.state !== 'active' ? null : <div className="dsh-external-access-set-actions"><button type="button" disabled={!canManage || busy} onClick={() => editSet(connection, readingSet)}>{b('编辑', 'Edit')}</button><button type="button" disabled={!canManage || busy} onClick={() => copySet(connection, readingSet)}>{b('复制', 'Copy')}</button><button type="button" disabled={!canManage || busy || connection.readingSets.length <= 1} title={connection.readingSets.length <= 1 ? b('最后一个书单不能删除，请撤销连接。', 'The last set cannot be deleted; revoke the connection instead.') : undefined} onClick={() => void deleteSet(connection, readingSet)}>{b('删除', 'Delete')}</button></div>}
             </section>)}</div>

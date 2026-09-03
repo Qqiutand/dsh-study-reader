@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1 - 2026-09-03
+
+- Added an explicit selected-document view to the external MCP reading-set picker, with a live count and bilingual empty state.
+- Aligned selected rows and checkboxes with the Study Reader theme so the current reading-set scope remains visible while browsing folders or search results.
+- Explained each reading set identifier in context, added one-click copy, and removed horizontal overflow from the connection list on narrow layouts.
+- Removed revoked connections from the management list immediately while retaining their server-side audit records.
+
 ## 0.8.0 - 2026-09-03
 
 - Replaced the connection-per-document-set workflow with stable client connections containing up to 32 named reading sets. Adding, editing, or deleting a set no longer rotates the bearer token or changes the Codex MCP configuration.
