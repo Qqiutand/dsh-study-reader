@@ -68,6 +68,14 @@ describe('embedded external MCP', () => {
     expect(created.codexConfig).toContain('[mcp_servers.reader-probability]')
     expect(created.codexConfig).toContain(`bearer_token_env_var = "${created.environmentVariable}"`)
     expect(created.environmentVariable).toBe('DSH_STUDY_READER_PROBABILITY_TOKEN')
+    expect(JSON.parse(created.antigravityConfig)).toEqual({
+      mcpServers: {
+        'reader-probability': {
+          serverUrl: created.mcpUrl,
+          headers: { Authorization: `Bearer ${created.token}` },
+        },
+      },
+    })
 
     const unauthorized = await rpc(harness, undefined, 1, 'initialize', {
       protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' },

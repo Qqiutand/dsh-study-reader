@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.2 - 2026-09-03
+
+- Reframed external access as client authorization: one MCP URL and bearer token authorize one independently revocable collection of reading sets, while `setRef` only selects a set at tool-call time.
+- Added a ready-to-copy Antigravity Streamable HTTP configuration alongside the Codex configuration and masked one-time secrets by default.
+- Gave document formats, folders, authors, and conversation membership distinct, restrained metadata styling in the reading-set picker.
+
 ## 0.8.1 - 2026-09-03
 
 - Added an explicit selected-document view to the external MCP reading-set picker, with a live count and bilingual empty state.

@@ -302,6 +302,8 @@ export interface CreateExternalAccessResult {
   readonly mcpUrl: string
   readonly environmentVariable: string
   readonly codexConfig: string
+  /** Antigravity Streamable HTTP configuration. Contains the one-time bearer token. */
+  readonly antigravityConfig: string
 }
 
 export interface RevokeExternalAccessRequest {

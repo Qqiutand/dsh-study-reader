@@ -65,10 +65,13 @@ pnpm run install:dsh -- \
 
 ### 外部 AI 访问（MCP）
 
-打开 **书房 → 外部 AI 访问**，先创建一个客户端连接，通常保留名称
-`study-reader` 即可。页面只显示一次 Bearer Token，并生成对应的 Codex 配置。
-保持 `pnpm dsh web` 运行，在启动 Codex 前导出页面给出的 Token，再把生成的配置
-写入 `~/.codex/config.toml`：
+打开 **书房 → 外部 AI 访问** 创建一份“客户端授权”。一份授权由本机
+MCP 地址和一枚 Bearer Token 组成；这枚 Token 是其下全部书单的权限边界。
+如果另一个客户端需要独立的文献范围、过期时间或撤销，请另建一份授权。
+外部客户端使用 Reader 时需保持 `pnpm dsh web` 运行。
+
+对于 Codex，在启动前导出页面给出的 Token，再把生成的配置写入
+`~/.codex/config.toml`：
 
 ```toml
 [mcp_servers.study-reader]
@@ -76,14 +79,33 @@ url = "http://127.0.0.1:PORT/study-reader/mcp"
 bearer_token_env_var = "DSH_STUDY_READER_TOKEN"
 ```
 
-然后在这个稳定连接内创建多个命名书单。文献可来自全部文献、未分类、任一文件夹或
-本次对话；书单可以在浏览器中编辑、复制和删除，不会改变 Token 或 Codex 配置。
-只有在另一个客户端确实需要单独过期或撤销时，才需要再建一条连接。
+Antigravity 可以直接连接同一个 Streamable HTTP 端点。把页面生成的配置写入
+`~/.gemini/config/mcp_config.json` 或项目内的 `.agents/mcp_config.json`：
+
+```json
+{
+  "mcpServers": {
+    "study-reader": {
+      "serverUrl": "http://127.0.0.1:PORT/study-reader/mcp",
+      "headers": {
+        "Authorization": "Bearer <BEARER_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+Antigravity 会把这个自定义 header 保存在 JSON 文件中，请保护该文件。浏览器
+默认遮住 Token，并且只在创建授权时显示一次。
+
+然后在这份授权内创建多个命名书单。文献可来自全部文献、未分类、任一文件夹或
+本次对话；书单可以在浏览器中编辑、复制和删除，不会改变 Token 或客户端配置。
 
 连接会提供 `reader_list_sets`，以及 `reader_get_context`、
 `reader_list_documents`、`reader_get_outline`、`reader_search_passages` 和
 `reader_read_passage`。第一个工具返回书单名称、文献数量和简短的不透明 `setRef`。
-只有一个书单时可以省略 `setRef`；存在多个书单时，Reader 调用必须带上选中的值。
+`setRef` 只是工具调用时的书单选择器，不是第二枚密钥或环境变量。只有一个书单时
+可以省略 `setRef`；存在多个书单时，Reader 调用必须带上选中的值。
 文献与段落引用不能跨书单复用。
 
 外部 MCP 服务端不设置每轮或每个会话的 Reader 调用次数预算；单次结果大小、超时、

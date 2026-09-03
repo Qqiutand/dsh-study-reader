@@ -945,12 +945,21 @@ export class StudyService extends TypertRemoteService {
     const url = this.deps.config.externalMcpUrl
     const mcpServerName = externalMcpServerName(created.record)
     const environmentVariable = externalTokenEnvironmentVariable(mcpServerName)
+    const antigravityConfig = JSON.stringify({
+      mcpServers: {
+        [mcpServerName]: {
+          serverUrl: url,
+          headers: { Authorization: `Bearer ${created.token}` },
+        },
+      },
+    }, null, 2)
     return {
       connection: this.externalAccessView(created.record),
       token: created.token,
       mcpUrl: url,
       environmentVariable,
       codexConfig: `[mcp_servers.${mcpServerName}]\nurl = ${JSON.stringify(url)}\nbearer_token_env_var = ${JSON.stringify(environmentVariable)}`,
+      antigravityConfig,
     }
   }
 

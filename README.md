@@ -67,10 +67,14 @@ write authorization, per-call timeouts, and exact duplicate-call protection stay
 
 ### External AI access (MCP)
 
-Open **Bookroom → External AI access** and create one client connection, normally
-named `study-reader`. The page shows its bearer token once and generates the
-matching Codex configuration. Keep `pnpm dsh web` running, export the shown token
-before starting Codex, and add the generated block to `~/.codex/config.toml`:
+Open **Bookroom → External AI access** and create a client authorization. One
+authorization consists of the local MCP URL plus one bearer token; that token is
+the security boundary for every reading set placed under it. Create another
+authorization when a client needs independently scoped, expiring, or revocable
+access. Keep `pnpm dsh web` running while an external client uses the Reader.
+
+For Codex, export the one-time token before starting it and add the generated
+block to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.study-reader]
@@ -78,18 +82,38 @@ url = "http://127.0.0.1:PORT/study-reader/mcp"
 bearer_token_env_var = "DSH_STUDY_READER_TOKEN"
 ```
 
-Inside that stable connection, create named reading sets from the whole library,
+Antigravity can connect directly to the same Streamable HTTP endpoint. Add the
+generated block to `~/.gemini/config/mcp_config.json` or the workspace-local
+`.agents/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "study-reader": {
+      "serverUrl": "http://127.0.0.1:PORT/study-reader/mcp",
+      "headers": {
+        "Authorization": "Bearer <BEARER_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+Antigravity stores this custom header in the JSON file, so protect that file.
+The browser masks the token by default and displays it only once.
+
+Inside an authorization, create named reading sets from the whole library,
 uncategorized documents, a library folder, or the current conversation. Sets can
-be edited, copied, and deleted in the browser without changing the token or Codex
-configuration. Create a separate connection only when you need independently
-expiring or revocable credentials for another client.
+be edited, copied, and deleted in the browser without changing the token or any
+client configuration.
 
 The connection exposes `reader_list_sets` plus `reader_get_context`,
 `reader_list_documents`, `reader_get_outline`, `reader_search_passages`, and
 `reader_read_passage`. The first tool returns each set's display name, document
-count, and short opaque `setRef`. Reader calls may omit `setRef` while only one
-set exists; with multiple sets they must pass the chosen value. Document and
-passage references cannot be reused across sets.
+count, and short opaque `setRef`. A `setRef` is a runtime selector, not another
+credential or environment variable. Reader calls may omit it while only one set
+exists; with multiple sets they must pass the chosen value. Document and passage
+references cannot be reused across sets.
 
 The external MCP server has no per-turn or per-session Reader call-count budget.
 Per-call result sizes, timeouts, authorization, and opaque-reference boundaries

@@ -37,7 +37,7 @@ const baseSnapshot: ExternalAccessSnapshot = {
   folders: [{ id: 'folder-probability', name: 'Probability' }],
   sources: [
     { id: 'source-1' as never, title: 'Probability', authors: ['E. T. Jaynes'], recordVersion: 1, kind: 'book', format: 'pdf', revisionId: 'revision-1' as never, folderId: 'folder-probability', selectedInConversation: true },
-    { id: 'source-2' as never, title: 'Optics', recordVersion: 1, kind: 'book', format: 'pdf', revisionId: 'revision-2' as never, selectedInConversation: false },
+    { id: 'source-2' as never, title: 'Optics', recordVersion: 1, kind: 'book', format: 'epub', revisionId: 'revision-2' as never, selectedInConversation: false },
     { id: 'source-3' as never, title: 'Still importing', recordVersion: 1, kind: 'book', format: 'pdf', selectedInConversation: true },
   ],
   connections: [],
@@ -56,12 +56,15 @@ describe('ExternalAccess', () => {
       mcpUrl: baseSnapshot.mcpUrl,
       environmentVariable: 'DSH_STUDY_READER_TOKEN',
       codexConfig: '[mcp_servers.study-reader]\nurl = "http://127.0.0.1:2026/study-reader/mcp"',
+      antigravityConfig: '{\n  "mcpServers": {\n    "study-reader": {\n      "serverUrl": "http://127.0.0.1:2026/study-reader/mcp",\n      "headers": {\n        "Authorization": "Bearer dsr_v1.external-11111111111111111111111111111111.secret"\n      }\n    }\n  }\n}',
     } }))
     renderAccess({ externalAccessSnapshot, createExternalAccess })
 
     expect(await screen.findByRole('heading', { name: '外部 AI 访问' })).toBeTruthy()
     fireEvent.change(screen.getByLabelText('书单名称'), { target: { value: 'Probability' } })
-    fireEvent.click(screen.getByRole('button', { name: '创建连接' }))
+    expect(screen.getByText('MCP 地址 + Bearer Token')).toBeTruthy()
+    expect(screen.getByText('reader_list_sets → setRef')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '生成客户端授权' }))
 
     await waitFor(() => expect(createExternalAccess).toHaveBeenCalledTimes(1))
     expect(createExternalAccess).toHaveBeenCalledWith({
@@ -73,8 +76,16 @@ describe('ExternalAccess', () => {
       sourceIds: ['source-1'],
       expiresInDays: 365,
     })
-    expect(await screen.findByDisplayValue(/dsr_v1\.external-1111/u)).toBeTruthy()
+    const secret = await screen.findByLabelText('访问密钥') as HTMLInputElement
+    expect(secret.type).toBe('password')
+    expect(secret.value).toMatch(/dsr_v1\.external-1111/u)
+    expect(document.body.textContent).not.toContain(secret.value)
+    fireEvent.click(screen.getByRole('button', { name: '显示' }))
+    expect(secret.type).toBe('text')
     expect(screen.getByText(/mcp_servers\.study-reader/u)).toBeTruthy()
+    expect(screen.getByLabelText('Antigravity')).toBeTruthy()
+    expect(screen.getAllByText(/<BEARER_TOKEN>/u)).toHaveLength(2)
+    expect(screen.getByText(/"serverUrl": "http:\/\/127\.0\.0\.1:2026\/study-reader\/mcp"/u)).toBeTruthy()
   })
 
   it('adds and edits sets on an existing connection without requesting new credentials', async () => {
@@ -90,7 +101,7 @@ describe('ExternalAccess', () => {
     expect(screen.getByText('书单标识（setRef）')).toBeTruthy()
     expect(screen.getByText('AI 用它选择这份书单；需要时可复制到对话中。')).toBeTruthy()
     expect(screen.getByText('set_default')).toBeTruthy()
-    expect((screen.getByLabelText('所属连接') as HTMLSelectElement).value).toBe(connection.id)
+    expect((screen.getByLabelText('客户端授权') as HTMLSelectElement).value).toBe(connection.id)
     fireEvent.change(screen.getByRole('combobox', { name: '文献分类' }), { target: { value: 'uncategorized' } })
     expect(screen.queryByRole('checkbox', { name: /Probability/u })).toBeNull()
     fireEvent.click(screen.getByRole('checkbox', { name: /Optics/u }))
@@ -99,14 +110,16 @@ describe('ExternalAccess', () => {
     const selectedProbability = screen.getByRole('checkbox', { name: /Probability/u }) as HTMLInputElement
     expect(selectedProbability.checked).toBe(true)
     expect(selectedProbability.closest('label')?.dataset.selected).toBe('true')
+    expect(selectedProbability.closest('label')?.querySelector('[data-kind="folder"]')?.getAttribute('data-tone')).not.toBe('neutral')
     expect((screen.getByRole('checkbox', { name: /Optics/u }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByRole('checkbox', { name: /Optics/u }).closest('label')?.querySelector('[data-format="epub"]')).toBeTruthy()
     expect(screen.getAllByRole('checkbox')).toHaveLength(2)
     fireEvent.change(screen.getByLabelText('书单名称'), { target: { value: 'Optics' } })
     fireEvent.click(screen.getAllByRole('button', { name: '添加书单' })[0]!)
 
     await waitFor(() => expect(saveExternalReadingSet).toHaveBeenCalledWith(expect.objectContaining({ accessId: connection.id, expectedVersion: 1, label: 'Optics', sourceIds: ['source-1', 'source-2'] })))
-    expect(screen.queryByLabelText('新连接凭据')).toBeNull()
-    expect(await screen.findByText(/Token 不需要修改/u)).toBeTruthy()
+    expect(screen.queryByLabelText('新客户端授权凭据')).toBeNull()
+    expect(await screen.findByText(/客户端配置和 Token 不需要修改/u)).toBeTruthy()
 
     fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]!)
     expect(screen.getByDisplayValue('Probability')).toBeTruthy()
@@ -122,12 +135,12 @@ describe('ExternalAccess', () => {
     const revokeExternalAccess = vi.fn(async () => ({ ok: true as const, value: { ...connection, state: 'revoked' as const } }))
     renderAccess({ externalAccessSnapshot, revokeExternalAccess })
 
-    expect(await screen.findByRole('button', { name: '撤销连接' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: '撤销授权' })).toBeTruthy()
     expect(screen.queryByText('SSH')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '撤销连接' }))
+    fireEvent.click(screen.getByRole('button', { name: '撤销授权' }))
 
     await waitFor(() => expect(revokeExternalAccess).toHaveBeenCalledTimes(1))
-    expect(await screen.findByText('还没有外部连接。')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '撤销连接' })).toBeNull()
+    expect(await screen.findByText('还没有客户端授权。')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '撤销授权' })).toBeNull()
   })
 })
