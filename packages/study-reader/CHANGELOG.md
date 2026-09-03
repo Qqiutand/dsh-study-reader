@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.4 - 2026-09-03
+
+- Kept the stable bearer token and client configurations within reach beside the authorization selector and at the top of each active authorization card.
+- Automatically brings the credential panel into view after reopening it, without rotating or replacing the authorization token.
+
 ## 0.8.3 - 2026-09-03
 
 - Made every active client authorization's stable bearer token and complete Codex/Antigravity configurations reopenable from the browser without rotating the token.

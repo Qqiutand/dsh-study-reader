@@ -1,5 +1,5 @@
 /** Browser control plane for stable external MCP connections and editable reading sets. */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CreateExternalAccessResult, ExternalAccessSnapshot, ExternalAccessView, ExternalReadingSetView } from '../../study/types.ts'
 import type { StudyRemote } from '../remote.ts'
 import { useBilingualText } from '../StudyLocale.tsx'
@@ -70,6 +70,7 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
   const [failure, setFailure] = useState<string>()
   const [notice, setNotice] = useState<string>()
   const [busy, setBusy] = useState(false)
+  const credentialPanelRef = useRef<HTMLElement>(null)
 
   const conversationSelection = (value: ExternalAccessSnapshot): Set<string> => new Set(value.sources
     .filter(source => source.selectedInConversation && source.revisionId !== undefined)
@@ -98,6 +99,10 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
     }).catch(error => { if (!cancelled) setFailure(error instanceof Error ? error.message : String(error)) })
     return () => { cancelled = true }
   }, [props.sessionId, props.studyRemote])
+
+  useEffect(() => {
+    if (created !== undefined) credentialPanelRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  }, [created])
 
   const readySources = useMemo(() => snapshot?.sources.filter(source => source.revisionId !== undefined) ?? [], [snapshot])
   const conversationSourceIds = useMemo(() => readySources.filter(source => source.selectedInConversation).map(source => String(source.id)), [readySources])
@@ -267,7 +272,7 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
       <div><small>{b('3 · AI 选择书单', '3 · AI selects a set')}</small><strong><code>reader_list_sets → setRef</code></strong><span>{b('setRef 不是密钥，无需写入客户端配置。', 'setRef is not a secret and is not part of client configuration.')}</span></div>
     </section>
 
-    {created === undefined ? null : <section className="dsh-external-access-result" aria-label={b('客户端配置', 'Client configuration')}>
+    {created === undefined ? null : <section ref={credentialPanelRef} className="dsh-external-access-result" aria-label={b('客户端配置', 'Client configuration')}>
       <header><div><h2>{b(`${created.connection.label} · 客户端配置`, `${created.connection.label} · Client configuration`)}</h2><p>{b('Codex 与 Antigravity 可以同时使用下面同一个地址和 Token。以后可从授权卡片再次打开，Token 不会改变。', 'Codex and Antigravity can use the same URL and token below at the same time. Reopen this configuration from the authorization card at any time without changing the token.')}</p></div></header>
       <div className="dsh-external-access-credential-explanation"><p><strong>{b('保持 DSH Web 运行', 'Keep DSH Web running')}</strong><span>{b('MCP 服务由 Study Reader 插件提供；DSH Web 停止时，两个客户端都无法连接。', 'The Study Reader plugin serves this MCP endpoint; neither client can connect while DSH Web is stopped.')}</span></p><p><strong>{b('不需要 MCP Login', 'No MCP login')}</strong><span>{b('这里使用固定 Bearer Token，不是 OAuth。不要运行 codex mcp login。', 'This connection uses a fixed bearer token, not OAuth. Do not run codex mcp login.')}</span></p></div>
       <label>{b('MCP 服务地址', 'MCP server URL')}<div><code>{created.mcpUrl}</code><button type="button" onClick={() => void copy(created.mcpUrl, b('MCP 地址已复制。', 'MCP URL copied.'))}>{b('复制', 'Copy')}</button></div></label>
@@ -288,7 +293,7 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
       <section className="dsh-external-access-panel">
         <header><div><h2>{editingSetRef !== undefined ? b('编辑书单', 'Edit reading set') : creatingConnection ? b('授权新客户端', 'Authorize a new client') : b('添加书单', 'Add reading set')}</h2><p>{creatingConnection ? b('创建一枚独立 Token，并为这份授权设置第一份书单。', 'Create an independent token and the first reading set available through it.') : b('在同一份客户端授权下管理书单；Token 和客户端配置不会改变。', 'Manage a set under the same client authorization; its token and client configuration do not change.')}</p></div><strong>{selectedIds.size}</strong></header>
         <div className="dsh-external-access-fields">
-          <label>{b('客户端授权', 'Client authorization')}<select aria-label={b('客户端授权', 'Client authorization')} value={targetAccessId} disabled={!canManage || busy || editingSetRef !== undefined} onChange={event => { setTargetAccessId(event.currentTarget.value); resetSetDraft() }}><option value="new">{b('创建新的客户端授权', 'Create a new client authorization')}</option>{activeConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.label} · {connection.mcpServerName}</option>)}</select><small>{creatingConnection ? b('生成一枚可独立撤销和过期的 Token。', 'Creates a token that can expire or be revoked independently.') : b('新书单会立即加入这枚 Token 的授权范围。', 'The new set immediately joins this token\'s authorization scope.')}</small></label>
+          <div className="dsh-external-access-client-field"><span>{b('客户端授权', 'Client authorization')}</span><div><select aria-label={b('客户端授权', 'Client authorization')} value={targetAccessId} disabled={!canManage || busy || editingSetRef !== undefined} onChange={event => { setTargetAccessId(event.currentTarget.value); resetSetDraft() }}><option value="new">{b('创建新的客户端授权', 'Create a new client authorization')}</option>{activeConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.label} · {connection.mcpServerName}</option>)}</select>{targetConnection === undefined ? null : <button type="button" disabled={!canManage || busy} onClick={() => void showCredentials(targetConnection)}>{b('查看 Token 与配置', 'View token & config')}</button>}</div><small>{creatingConnection ? b('生成一枚可独立撤销和过期的 Token。', 'Creates a token that can expire or be revoked independently.') : b('新书单会立即加入这枚 Token 的授权范围。', 'The new set immediately joins this token\'s authorization scope.')}</small></div>
           {creatingConnection ? <label>{b('客户端名称', 'Client name')}<input aria-label={b('客户端名称', 'Client name')} value={connectionLabel} maxLength={120} disabled={!canManage || busy} onChange={event => setConnectionLabel(event.currentTarget.value)} /><small>{b('仅用于在这个页面识别谁在使用这枚 Token，例如 Codex。', 'Only identifies who uses this token on this page, for example Codex.')}</small></label> : null}
           {creatingConnection ? <label>{b('MCP 配置标识', 'MCP configuration key')}<input aria-label={b('MCP 配置标识', 'MCP configuration key')} value={mcpServerName} maxLength={64} spellCheck={false} aria-invalid={!mcpServerNameValid} disabled={!canManage || busy} onChange={event => setMcpServerName(event.currentTarget.value)} /><small>{b('写入 Codex 或 Antigravity 配置的本机名称；通常保持 study-reader。', 'The local name written into Codex or Antigravity configuration; usually keep study-reader.')}</small></label> : null}
           {creatingConnection ? <label>{b('授权有效期', 'Authorization expiry')}<select aria-label={b('授权有效期', 'Authorization expiry')} value={expiresInDays} disabled={!canManage || busy} onChange={event => setExpiresInDays(Number(event.currentTarget.value))}><option value={30}>{b('30 天', '30 days')}</option><option value={90}>{b('90 天', '90 days')}</option><option value={365}>{b('365 天', '365 days')}</option></select></label> : null}
@@ -313,7 +318,7 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
         <header><div><h2>{b('客户端授权与书单', 'Client authorizations and reading sets')}</h2><p>{b('每份授权只有一枚 Token，可包含多份书单。如需独立的可见范围、过期或撤销，请另建一份客户端授权。', 'Each authorization has one token and may contain multiple sets. Create another client authorization when visibility, expiry, or revocation must be independent.')}</p></div><strong>{listedConnections.length}</strong></header>
         <div className="dsh-external-access-connections">
           {listedConnections.length === 0 ? <p>{b('还没有客户端授权。', 'No client authorizations yet.')}</p> : listedConnections.map(connection => <article key={connection.id} data-state={connection.state}>
-            <div><strong>{connection.label}</strong><span>{connection.state === 'active' ? b('可用', 'Active') : connection.state === 'expired' ? b('已过期', 'Expired') : b('已撤销', 'Revoked')}</span></div>
+            <div><strong>{connection.label}</strong><span>{connection.state === 'active' ? b('可用', 'Active') : connection.state === 'expired' ? b('已过期', 'Expired') : b('已撤销', 'Revoked')}</span>{connection.state !== 'active' ? null : <button className="dsh-external-access-view-config" type="button" disabled={!canManage || busy} onClick={() => void showCredentials(connection)}>{b('查看 Token 与配置', 'View token & config')}</button>}</div>
             <div className="dsh-external-access-connection-meta"><span>{b('MCP 配置标识', 'MCP configuration key')}</span><code>{connection.mcpServerName}</code><small>{b('到期', 'Expires')}: {formatDate(connection.expiresAt)}</small></div>
             <div className="dsh-external-access-set-list">{connection.readingSets.map(readingSet => <section key={readingSet.setRef} className="dsh-external-access-set">
               <div><strong>{readingSet.label}</strong></div>
@@ -322,7 +327,7 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
               <small>{readingSet.sourceIds.length} {b('篇文献', 'documents')}</small>
               {connection.state !== 'active' ? null : <div className="dsh-external-access-set-actions"><button type="button" disabled={!canManage || busy} onClick={() => editSet(connection, readingSet)}>{b('编辑', 'Edit')}</button><button type="button" disabled={!canManage || busy} onClick={() => copySet(connection, readingSet)}>{b('复制', 'Copy')}</button><button type="button" disabled={!canManage || busy || connection.readingSets.length <= 1} title={connection.readingSets.length <= 1 ? b('最后一个书单不能删除，请撤销整份客户端授权。', 'The last set cannot be deleted; revoke the client authorization instead.') : undefined} onClick={() => void deleteSet(connection, readingSet)}>{b('删除', 'Delete')}</button></div>}
             </section>)}</div>
-            {connection.state !== 'active' ? null : <div className="dsh-external-access-connection-actions"><button type="button" disabled={!canManage || busy} onClick={() => void showCredentials(connection)}>{b('查看配置', 'View configuration')}</button><button type="button" disabled={!canManage || busy} onClick={() => { setTargetAccessId(connection.id); resetSetDraft(); setNotice(b(`新书单将加入“${connection.label}”的授权范围，Token 不变。`, `The new set will join “${connection.label}”'s authorization scope without changing its token.`)) }}>{b('添加书单', 'Add set')}</button><button type="button" disabled={!canManage || busy} onClick={() => void revoke(connection)}>{b('撤销授权', 'Revoke authorization')}</button></div>}
+            {connection.state !== 'active' ? null : <div className="dsh-external-access-connection-actions"><button type="button" disabled={!canManage || busy} onClick={() => { setTargetAccessId(connection.id); resetSetDraft(); setNotice(b(`新书单将加入“${connection.label}”的授权范围，Token 不变。`, `The new set will join “${connection.label}”'s authorization scope without changing its token.`)) }}>{b('添加书单', 'Add set')}</button><button type="button" disabled={!canManage || busy} onClick={() => void revoke(connection)}>{b('撤销授权', 'Revoke authorization')}</button></div>}
           </article>)}
         </div>
       </section>

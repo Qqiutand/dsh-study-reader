@@ -143,7 +143,9 @@ describe('ExternalAccess', () => {
     const externalAccessCredentials = vi.fn(async () => ({ ok: true as const, value: credentials }))
     renderAccess({ externalAccessSnapshot, externalAccessCredentials })
 
-    fireEvent.click(await screen.findByRole('button', { name: '查看配置' }))
+    const configurationButtons = await screen.findAllByRole('button', { name: '查看 Token 与配置' })
+    expect(configurationButtons).toHaveLength(2)
+    fireEvent.click(configurationButtons[0]!)
     await waitFor(() => expect(externalAccessCredentials).toHaveBeenCalledWith({ sessionId: 'session-1', accessId: connection.id }))
     expect(await screen.findByRole('heading', { name: 'Codex · 客户端配置' })).toBeTruthy()
     expect(screen.getAllByText(/dsr_v1\.external-1111/u).length).toBeGreaterThan(1)
