@@ -52,10 +52,6 @@ function folderTone(folderId: string | undefined): string {
   return String(hash % 6)
 }
 
-function redactSecret(value: string, secret: string): string {
-  return value.replace(secret, '<BEARER_TOKEN>')
-}
-
 export function ExternalAccess(props: { readonly sessionId: string; readonly studyRemote: StudyRemote | undefined }) {
   const b = useBilingualText()
   const defaultReadingSetLabel = b('书单', 'Reading set')
@@ -69,8 +65,8 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
   const [expiresInDays, setExpiresInDays] = useState(365)
   const [query, setQuery] = useState('')
   const [folderFilter, setFolderFilter] = useState('all')
+  const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'unselected'>('all')
   const [created, setCreated] = useState<CreateExternalAccessResult>()
-  const [showCreatedToken, setShowCreatedToken] = useState(false)
   const [failure, setFailure] = useState<string>()
   const [notice, setNotice] = useState<string>()
   const [busy, setBusy] = useState(false)
@@ -89,7 +85,7 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
 
   useEffect(() => {
     let cancelled = false
-    setSnapshot(undefined); setCreated(undefined); setShowCreatedToken(false); setFailure(undefined); setNotice(undefined); setEditingSetRef(undefined)
+    setSnapshot(undefined); setCreated(undefined); setFailure(undefined); setNotice(undefined); setEditingSetRef(undefined)
     if (props.studyRemote === undefined) return
     void props.studyRemote.externalAccessSnapshot({ sessionId: props.sessionId }).then(result => {
       if (cancelled) return
@@ -121,18 +117,17 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
     }
     return { ...folder, path: names.join(' / ') }
   }).sort((left, right) => left.path.localeCompare(right.path)), [folderNameById, folderParentById, snapshot])
-  const visibleSources = useMemo(() => {
+  const categorySources = useMemo(() => readySources.filter(source => folderFilter === 'all'
+    || (folderFilter === 'uncategorized'
+      ? source.folderId === undefined
+      : isInsideFolder(source.folderId, folderFilter, folderParentById))), [folderFilter, folderParentById, readySources])
+  const searchedSources = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase()
-    return readySources.filter(source => {
-      const matchesFolder = folderFilter === 'all'
-        || (folderFilter === 'selected'
-          ? selectedIds.has(String(source.id))
-          : folderFilter === 'uncategorized'
-            ? source.folderId === undefined
-            : isInsideFolder(source.folderId, folderFilter, folderParentById))
-      return matchesFolder && (needle === '' || source.title.toLocaleLowerCase().includes(needle) || source.authors?.some(author => author.toLocaleLowerCase().includes(needle)))
-    })
-  }, [folderFilter, folderParentById, query, readySources, selectedIds])
+    return categorySources.filter(source => needle === '' || source.title.toLocaleLowerCase().includes(needle) || source.authors?.some(author => author.toLocaleLowerCase().includes(needle)))
+  }, [categorySources, query])
+  const visibleSources = useMemo(() => searchedSources.filter(source => selectionFilter === 'all'
+    || (selectionFilter === 'selected') === selectedIds.has(String(source.id))), [searchedSources, selectedIds, selectionFilter])
+  const visibleSelectedCount = useMemo(() => searchedSources.filter(source => selectedIds.has(String(source.id))).length, [searchedSources, selectedIds])
   const canManage = snapshot?.enabled === true && snapshot.controlMode === 'trusted-local-user' && props.studyRemote !== undefined
   const creatingConnection = targetAccessId === 'new'
   const mcpServerNameValid = MCP_SERVER_NAME_PATTERN.test(mcpServerName)
@@ -151,7 +146,7 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
 
   const save = async (): Promise<void> => {
     if (props.studyRemote === undefined) return
-    setBusy(true); setFailure(undefined); setNotice(undefined); setCreated(undefined)
+    setBusy(true); setFailure(undefined); setNotice(undefined)
     try {
       if (creatingConnection) {
         const result = await props.studyRemote.createExternalAccess({
@@ -165,7 +160,6 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
         })
         if (!result.ok) throw new Error(result.error.message)
         setCreated(result.value)
-        setShowCreatedToken(false)
         setTargetAccessId(result.value.connection.id)
         const next = await load()
         resetSetDraft(next)
@@ -195,7 +189,7 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
     setEditingSetRef(readingSet.setRef)
     setReadingSetLabel(readingSet.label)
     setSelectedIds(new Set(readingSet.sourceIds.filter(sourceId => readyIds.has(sourceId))))
-    setCreated(undefined); setFailure(undefined)
+    setFailure(undefined)
     setNotice(b(`正在编辑“${readingSet.label}”；保存后 Token 不变。`, `Editing “${readingSet.label}”; its token will not change.`))
   }
 
@@ -235,6 +229,18 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
     finally { setBusy(false) }
   }
 
+  const showCredentials = async (connection: ExternalAccessView): Promise<void> => {
+    if (props.studyRemote === undefined) return
+    setBusy(true); setFailure(undefined); setNotice(undefined)
+    try {
+      const result = await props.studyRemote.externalAccessCredentials({ sessionId: props.sessionId, accessId: connection.id })
+      if (!result.ok) throw new Error(result.error.message)
+      setCreated(result.value)
+      setNotice(b(`正在显示“${connection.label}”的 Codex 与 Antigravity 配置；Token 没有发生变化。`, `Showing the Codex and Antigravity configurations for “${connection.label}”; its token has not changed.`))
+    } catch (error) { setFailure(error instanceof Error ? error.message : String(error)) }
+    finally { setBusy(false) }
+  }
+
   const copy = async (value: string, message: string): Promise<void> => {
     try { await copyText(value); setNotice(message) }
     catch { setFailure(b('复制失败，请手动选择文本。', 'Copy failed. Select the text manually.')) }
@@ -261,6 +267,23 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
       <div><small>{b('3 · AI 选择书单', '3 · AI selects a set')}</small><strong><code>reader_list_sets → setRef</code></strong><span>{b('setRef 不是密钥，无需写入客户端配置。', 'setRef is not a secret and is not part of client configuration.')}</span></div>
     </section>
 
+    {created === undefined ? null : <section className="dsh-external-access-result" aria-label={b('客户端配置', 'Client configuration')}>
+      <header><div><h2>{b(`${created.connection.label} · 客户端配置`, `${created.connection.label} · Client configuration`)}</h2><p>{b('Codex 与 Antigravity 可以同时使用下面同一个地址和 Token。以后可从授权卡片再次打开，Token 不会改变。', 'Codex and Antigravity can use the same URL and token below at the same time. Reopen this configuration from the authorization card at any time without changing the token.')}</p></div></header>
+      <div className="dsh-external-access-credential-explanation"><p><strong>{b('保持 DSH Web 运行', 'Keep DSH Web running')}</strong><span>{b('MCP 服务由 Study Reader 插件提供；DSH Web 停止时，两个客户端都无法连接。', 'The Study Reader plugin serves this MCP endpoint; neither client can connect while DSH Web is stopped.')}</span></p><p><strong>{b('不需要 MCP Login', 'No MCP login')}</strong><span>{b('这里使用固定 Bearer Token，不是 OAuth。不要运行 codex mcp login。', 'This connection uses a fixed bearer token, not OAuth. Do not run codex mcp login.')}</span></p></div>
+      <label>{b('MCP 服务地址', 'MCP server URL')}<div><code>{created.mcpUrl}</code><button type="button" onClick={() => void copy(created.mcpUrl, b('MCP 地址已复制。', 'MCP URL copied.'))}>{b('复制', 'Copy')}</button></div></label>
+      <label>{b('Bearer Token', 'Bearer token')}<div><code>{created.token}</code><button type="button" onClick={() => void copy(created.token, b('Bearer Token 已复制。', 'Bearer token copied.'))}>{b('复制', 'Copy')}</button></div><small>{b('这是这份授权的固定 Token；编辑书单不会改变它。', 'This is the stable token for this authorization; editing reading sets does not change it.')}</small></label>
+      <div className="dsh-external-access-client-configs">
+        <article aria-label="Codex">
+          <header><h3>Codex</h3><p>{b('配置已直接包含 Authorization header，不依赖 .bashrc 或环境变量。', 'The configuration includes the Authorization header directly and does not depend on .bashrc or environment variables.')}</p></header>
+          <label>{b('写入 ~/.codex/config.toml', 'Add to ~/.codex/config.toml')}<div><pre>{created.codexConfig}</pre><button type="button" onClick={() => void copy(created.codexConfig, b('Codex 配置已复制。', 'Codex configuration copied.'))}>{b('复制完整配置', 'Copy full configuration')}</button></div><small>{b('保存后重启 Codex。不要再执行 codex mcp login。', 'Restart Codex after saving. Do not run codex mcp login.')}</small></label>
+        </article>
+        <article aria-label="Antigravity">
+          <header><h3>Antigravity</h3><p>{b('同一个 Streamable HTTP 地址与 Token，可与 Codex 同时使用。', 'Uses the same Streamable HTTP URL and token and can run alongside Codex.')}</p></header>
+          <label>{b('写入 ~/.gemini/config/mcp_config.json 或项目 .agents/mcp_config.json', 'Add to ~/.gemini/config/mcp_config.json or project .agents/mcp_config.json')}<div><pre>{created.antigravityConfig}</pre><button type="button" onClick={() => void copy(created.antigravityConfig, b('Antigravity 配置已复制。', 'Antigravity configuration copied.'))}>{b('复制完整配置', 'Copy full configuration')}</button></div></label>
+        </article>
+      </div>
+    </section>}
+
     <div className="dsh-external-access-grid">
       <section className="dsh-external-access-panel">
         <header><div><h2>{editingSetRef !== undefined ? b('编辑书单', 'Edit reading set') : creatingConnection ? b('授权新客户端', 'Authorize a new client') : b('添加书单', 'Add reading set')}</h2><p>{creatingConnection ? b('创建一枚独立 Token，并为这份授权设置第一份书单。', 'Create an independent token and the first reading set available through it.') : b('在同一份客户端授权下管理书单；Token 和客户端配置不会改变。', 'Manage a set under the same client authorization; its token and client configuration do not change.')}</p></div><strong>{selectedIds.size}</strong></header>
@@ -272,12 +295,13 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
           <label>{b('书单名称', 'Reading set name')}<input aria-label={b('书单名称', 'Reading set name')} value={readingSetLabel} maxLength={120} disabled={!canManage || busy} onChange={event => setReadingSetLabel(event.currentTarget.value)} /><small>{b('AI 会在 reader_list_sets 中看到这个名称和文献数量。', 'AI sees this name and document count in reader_list_sets.')}</small></label>
         </div>
         <div className="dsh-external-access-source-presets">
-          <label>{b('文献分类', 'Document category')}<select aria-label={b('文献分类', 'Document category')} value={folderFilter} onChange={event => setFolderFilter(event.currentTarget.value)}><option value="all">{b(`全部文献 (${String(readySources.length)})`, `All documents (${String(readySources.length)})`)}</option><option value="selected">{b(`已勾选 (${String(selectedIds.size)})`, `Selected (${String(selectedIds.size)})`)}</option><option value="uncategorized">{b(`未分类 (${String(readySources.filter(source => source.folderId === undefined).length)})`, `Uncategorized (${String(readySources.filter(source => source.folderId === undefined).length)})`)}</option>{folderOptions.map(folder => <option key={folder.id} value={folder.id}>{folder.path} ({readySources.filter(source => isInsideFolder(source.folderId, folder.id, folderParentById)).length})</option>)}</select></label>
+          <label>{b('文献分类', 'Document category')}<select aria-label={b('文献分类', 'Document category')} value={folderFilter} onChange={event => setFolderFilter(event.currentTarget.value)}><option value="all">{b(`全部文献 (${String(readySources.length)})`, `All documents (${String(readySources.length)})`)}</option><option value="uncategorized">{b(`未分类 (${String(readySources.filter(source => source.folderId === undefined).length)})`, `Uncategorized (${String(readySources.filter(source => source.folderId === undefined).length)})`)}</option>{folderOptions.map(folder => <option key={folder.id} value={folder.id}>{folder.path} ({readySources.filter(source => isInsideFolder(source.folderId, folder.id, folderParentById)).length})</option>)}</select></label>
           <button type="button" disabled={!canManage || busy || conversationSourceIds.length === 0} onClick={() => { setSelectedIds(new Set(conversationSourceIds)); setNotice(b(`已载入本次对话的 ${String(conversationSourceIds.length)} 篇文献。`, `Loaded ${String(conversationSourceIds.length)} documents from this conversation.`)) }}>{b(`使用本次对话 (${String(conversationSourceIds.length)})`, `Use current conversation (${String(conversationSourceIds.length)})`)}</button>
         </div>
+        <div className="dsh-external-access-selection-filter" role="group" aria-label={b('勾选状态', 'Selection status')}><button type="button" aria-pressed={selectionFilter === 'all'} onClick={() => setSelectionFilter('all')}>{b(`全部 (${String(searchedSources.length)})`, `All (${String(searchedSources.length)})`)}</button><button type="button" aria-pressed={selectionFilter === 'selected'} onClick={() => setSelectionFilter('selected')}>{b(`已勾选 (${String(visibleSelectedCount)})`, `Selected (${String(visibleSelectedCount)})`)}</button><button type="button" aria-pressed={selectionFilter === 'unselected'} onClick={() => setSelectionFilter('unselected')}>{b(`未勾选 (${String(searchedSources.length - visibleSelectedCount)})`, `Unselected (${String(searchedSources.length - visibleSelectedCount)})`)}</button></div>
         <div className="dsh-external-access-source-toolbar"><input type="search" aria-label={b('筛选文献', 'Filter documents')} placeholder={b('按标题或作者筛选', 'Filter by title or author')} value={query} onChange={event => setQuery(event.currentTarget.value)} /><button type="button" disabled={!canManage || busy || visibleSources.length === 0} onClick={() => setSelectedIds(current => new Set([...current, ...visibleSources.map(source => String(source.id))]))}>{b('选择当前列表', 'Select current list')}</button><button type="button" disabled={!canManage || busy} onClick={() => setSelectedIds(new Set())}>{b('清空', 'Clear')}</button></div>
         <div className="dsh-external-access-sources">
-          {visibleSources.length === 0 ? <p>{folderFilter === 'selected' ? b('还没有勾选文献。', 'No documents selected yet.') : b('没有可选文献。', 'No selectable documents.')}</p> : visibleSources.map(source => <label key={String(source.id)} data-selected={selectedIds.has(String(source.id))}>
+          {visibleSources.length === 0 ? <p>{selectionFilter === 'selected' ? b('当前范围内没有已勾选文献。', 'No selected documents in the current scope.') : selectionFilter === 'unselected' ? b('当前范围内没有未勾选文献。', 'No unselected documents in the current scope.') : b('没有可选文献。', 'No selectable documents.')}</p> : visibleSources.map(source => <label key={String(source.id)} data-selected={selectedIds.has(String(source.id))}>
             <input type="checkbox" checked={selectedIds.has(String(source.id))} disabled={!canManage || busy} onChange={() => toggle(String(source.id))} />
             <span><strong>{source.title}</strong><small className="dsh-external-access-source-meta">{source.format === undefined ? null : <span data-kind="format" data-format={source.format}>{source.format.toUpperCase()}</span>}{source.authors === undefined || source.authors.length === 0 ? null : <span data-kind="author">{source.authors.join(', ')}</span>}<span data-kind="folder" data-tone={folderTone(source.folderId)}>{source.folderId === undefined ? b('未分类', 'Uncategorized') : (folderNameById.get(source.folderId) ?? source.folderId)}</span>{source.selectedInConversation ? <span data-kind="conversation">{b('本次对话', 'Current conversation')}</span> : null}</small></span>
           </label>)}
@@ -298,28 +322,11 @@ export function ExternalAccess(props: { readonly sessionId: string; readonly stu
               <small>{readingSet.sourceIds.length} {b('篇文献', 'documents')}</small>
               {connection.state !== 'active' ? null : <div className="dsh-external-access-set-actions"><button type="button" disabled={!canManage || busy} onClick={() => editSet(connection, readingSet)}>{b('编辑', 'Edit')}</button><button type="button" disabled={!canManage || busy} onClick={() => copySet(connection, readingSet)}>{b('复制', 'Copy')}</button><button type="button" disabled={!canManage || busy || connection.readingSets.length <= 1} title={connection.readingSets.length <= 1 ? b('最后一个书单不能删除，请撤销整份客户端授权。', 'The last set cannot be deleted; revoke the client authorization instead.') : undefined} onClick={() => void deleteSet(connection, readingSet)}>{b('删除', 'Delete')}</button></div>}
             </section>)}</div>
-            {connection.state !== 'active' ? null : <div className="dsh-external-access-connection-actions"><button type="button" disabled={!canManage || busy} onClick={() => { setTargetAccessId(connection.id); resetSetDraft(); setNotice(b(`新书单将加入“${connection.label}”的授权范围，Token 不变。`, `The new set will join “${connection.label}”'s authorization scope without changing its token.`)) }}>{b('添加书单', 'Add set')}</button><button type="button" disabled={!canManage || busy} onClick={() => void revoke(connection)}>{b('撤销授权', 'Revoke authorization')}</button></div>}
+            {connection.state !== 'active' ? null : <div className="dsh-external-access-connection-actions"><button type="button" disabled={!canManage || busy} onClick={() => void showCredentials(connection)}>{b('查看配置', 'View configuration')}</button><button type="button" disabled={!canManage || busy} onClick={() => { setTargetAccessId(connection.id); resetSetDraft(); setNotice(b(`新书单将加入“${connection.label}”的授权范围，Token 不变。`, `The new set will join “${connection.label}”'s authorization scope without changing its token.`)) }}>{b('添加书单', 'Add set')}</button><button type="button" disabled={!canManage || busy} onClick={() => void revoke(connection)}>{b('撤销授权', 'Revoke authorization')}</button></div>}
           </article>)}
         </div>
       </section>
     </div>
 
-    {created === undefined ? null : <section className="dsh-external-access-result" aria-label={b('新客户端授权凭据', 'New client authorization credentials')}>
-      <header><div><h2>{b('客户端授权已生成', 'Client authorization created')}</h2><p>{b(`这是“${created.connection.label}”的一次性配置凭据。这枚 Token 可访问该授权下现在及以后添加的全部书单。`, `These are the one-time credentials for “${created.connection.label}”. This token can access every reading set currently or later added to this authorization.`)}</p></div><button type="button" onClick={() => { setCreated(undefined); setShowCreatedToken(false) }}>{b('隐藏', 'Hide')}</button></header>
-      <div className="dsh-external-access-credential-explanation"><p><strong>{b('客户端如何连接', 'How the client connects')}</strong><span>{b('客户端使用下面的 MCP 地址和 Bearer Token 完成认证。', 'The client authenticates with the MCP URL and bearer token below.')}</span></p><p><strong>{b('书单如何选择', 'How a reading set is selected')}</strong><span>{b('AI 连接后调用 reader_list_sets 获取 setRef；setRef 不需要写进配置或环境变量。', 'After connecting, AI calls reader_list_sets to obtain setRef; setRef is not written into configuration or environment variables.')}</span></p></div>
-      <label>{b('MCP 服务地址', 'MCP server URL')}<div><code>{created.mcpUrl}</code><button type="button" onClick={() => void copy(created.mcpUrl, b('MCP 地址已复制。', 'MCP URL copied.'))}>{b('复制', 'Copy')}</button></div></label>
-      <label>{b('访问密钥（Bearer Token）', 'Access secret (bearer token)')}<div className="dsh-external-access-secret-row"><input aria-label={b('访问密钥', 'Access secret')} readOnly type={showCreatedToken ? 'text' : 'password'} autoComplete="off" value={created.token} /><button type="button" aria-pressed={showCreatedToken} onClick={() => setShowCreatedToken(value => !value)}>{showCreatedToken ? b('隐藏', 'Hide') : b('显示', 'Show')}</button><button type="button" onClick={() => void copy(created.token, b('访问密钥已复制。', 'Access secret copied.'))}>{b('复制', 'Copy')}</button></div><small>{b('只显示这一次。它代表这份授权的全部访问权，不要放入截图、仓库或日志。', 'Shown only once. It grants the full scope of this authorization; keep it out of screenshots, repositories, and logs.')}</small></label>
-      <div className="dsh-external-access-client-configs">
-        <article aria-label="Codex">
-          <header><h3>Codex</h3><p>{b('环境变量只保存 Token；config.toml 保存 MCP 地址和环境变量名。', 'The environment variable stores only the token; config.toml stores the MCP URL and environment-variable name.')}</p></header>
-          <label>{b('1 · 启动 Codex 前执行', '1 · Run before starting Codex')}<div><code>{`export ${created.environmentVariable}='<BEARER_TOKEN>'`}</code><button type="button" onClick={() => void copy(`export ${created.environmentVariable}='${created.token}'`, b('含密钥的环境变量命令已复制。', 'Environment command with secret copied.'))}>{b('复制完整命令（含密钥）', 'Copy full command (includes secret)')}</button></div></label>
-          <label>{b('2 · 写入 ~/.codex/config.toml', '2 · Add to ~/.codex/config.toml')}<div><pre>{created.codexConfig}</pre><button type="button" onClick={() => void copy(created.codexConfig, b('Codex 配置已复制。', 'Codex configuration copied.'))}>{b('复制配置', 'Copy configuration')}</button></div></label>
-        </article>
-        <article aria-label="Antigravity">
-          <header><h3>Antigravity</h3><p>{b('直接使用 Streamable HTTP；serverUrl 是地址，Authorization header 携带 Token。', 'Connects directly over Streamable HTTP: serverUrl is the endpoint and the Authorization header carries the token.')}</p></header>
-          <label>{b('写入 ~/.gemini/config/mcp_config.json 或项目 .agents/mcp_config.json', 'Add to ~/.gemini/config/mcp_config.json or project .agents/mcp_config.json')}<div><pre>{redactSecret(created.antigravityConfig, created.token)}</pre><button type="button" onClick={() => void copy(created.antigravityConfig, b('含密钥的 Antigravity 配置已复制。', 'Antigravity configuration with secret copied.'))}>{b('复制完整配置（含密钥）', 'Copy full configuration (includes secret)')}</button></div><small>{b('Antigravity 的远程配置会把 Token 保存在 JSON 的 Authorization header 中，请保护该文件。', 'Antigravity stores the token in the JSON Authorization header; protect that file.')}</small></label>
-        </article>
-      </div>
-    </section>}
   </section>
 }

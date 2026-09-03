@@ -50,6 +50,7 @@ describe('external MCP access manager', () => {
 
     const restarted = await ExternalAccessManager.open(records, root)
     expect(restarted.authenticate(created.token)).toMatchObject({ id: created.record.id, label: 'Codex', mcpServerName: 'study-reader' })
+    expect(restarted.credentials(created.record.id)).toEqual({ record: created.record, token: created.token })
     expect(restarted.listSets(created.record.id)).toMatchObject([{ label: 'Probability books', sourceIds: ['source-a', 'source-b'] }])
   })
 

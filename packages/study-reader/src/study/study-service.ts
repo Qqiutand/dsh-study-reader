@@ -47,7 +47,7 @@ import type {
   SearchDocumentRequest, SearchDocumentResult, ToolDescriptorView, ProviderConnectionView,
   WorkspaceDefaultApplicationRecord, WorkspaceDefaultRecord, WorkspaceDefaultView,
   SaveWorkspaceDefaultRequest, ClearWorkspaceDefaultRequest,
-  CreateExternalAccessRequest, CreateExternalAccessResult, ExternalAccessRecord,
+  CreateExternalAccessRequest, CreateExternalAccessResult, ExternalAccessCredentialsRequest, ExternalAccessRecord,
   DeleteExternalReadingSetRequest, ExternalAccessSnapshot, ExternalAccessView, ExternalReadingSetRecord,
   ExternalReadingSetView, RevokeExternalAccessRequest, SaveExternalReadingSetRequest,
 } from './types.ts'
@@ -907,6 +907,28 @@ export class StudyService extends TypertRemoteService {
     }
   }
 
+  private externalAccessCredentials(record: ExternalAccessRecord, token: string): CreateExternalAccessResult {
+    const url = this.deps.config.externalMcpUrl
+    const mcpServerName = externalMcpServerName(record)
+    const environmentVariable = externalTokenEnvironmentVariable(mcpServerName)
+    const authorization = `Bearer ${token}`
+    return {
+      connection: this.externalAccessView(record),
+      token,
+      mcpUrl: url,
+      environmentVariable,
+      codexConfig: `[mcp_servers.${mcpServerName}]\nurl = ${JSON.stringify(url)}\nhttp_headers = { Authorization = ${JSON.stringify(authorization)} }`,
+      antigravityConfig: JSON.stringify({
+        mcpServers: {
+          [mcpServerName]: {
+            serverUrl: url,
+            headers: { Authorization: authorization },
+          },
+        },
+      }, null, 2),
+    }
+  }
+
   /** Browser projection for the deliberately small external-AI control plane. */
   @Remote('externalAccessSnapshot')
   externalAccessSnapshotForClient(request: { readonly sessionId: string }): ExternalAccessSnapshot {
@@ -942,25 +964,17 @@ export class StudyService extends TypertRemoteService {
       sourceIds,
       expiresInDays: request.expiresInDays,
     })
-    const url = this.deps.config.externalMcpUrl
-    const mcpServerName = externalMcpServerName(created.record)
-    const environmentVariable = externalTokenEnvironmentVariable(mcpServerName)
-    const antigravityConfig = JSON.stringify({
-      mcpServers: {
-        [mcpServerName]: {
-          serverUrl: url,
-          headers: { Authorization: `Bearer ${created.token}` },
-        },
-      },
-    }, null, 2)
-    return {
-      connection: this.externalAccessView(created.record),
-      token: created.token,
-      mcpUrl: url,
-      environmentVariable,
-      codexConfig: `[mcp_servers.${mcpServerName}]\nurl = ${JSON.stringify(url)}\nbearer_token_env_var = ${JSON.stringify(environmentVariable)}`,
-      antigravityConfig,
-    }
+    return this.externalAccessCredentials(created.record, created.token)
+  }
+
+  /** Return a ready-to-copy configuration for an existing active authorization without rotating it. */
+  @Remote('externalAccessCredentials')
+  externalAccessCredentialsForClient(request: ExternalAccessCredentialsRequest): CreateExternalAccessResult {
+    if (!this.deps.config.externalMcpEnabled) throw new StudyError('external MCP access is disabled', 'EXTERNAL_ACCESS_DISABLED')
+    if (this.deps.config.managementControlMode !== 'trusted-local-user') throw new StudyError('local management control is disabled', 'MANAGEMENT_CONTROL_DISABLED')
+    this.requireSessionId(request.sessionId, 'EXTERNAL_ACCESS_SESSION_REQUIRED')
+    const credentials = this.deps.externalAccess.credentials(request.accessId)
+    return this.externalAccessCredentials(credentials.record, credentials.token)
   }
 
   /** Add or update one reading set without rotating the connection token. */

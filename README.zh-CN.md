@@ -70,13 +70,14 @@ MCP 地址和一枚 Bearer Token 组成；这枚 Token 是其下全部书单的�
 如果另一个客户端需要独立的文献范围、过期时间或撤销，请另建一份授权。
 外部客户端使用 Reader 时需保持 `pnpm dsh web` 运行。
 
-对于 Codex，在启动前导出页面给出的 Token，再把生成的配置写入
-`~/.codex/config.toml`：
+对于 Codex，把页面生成的完整配置写入 `~/.codex/config.toml`，然后重启
+Codex。配置直接携带 Bearer Token，不需要 `.bashrc`、环境变量或
+`codex mcp login`（后者仅用于 OAuth）：
 
 ```toml
 [mcp_servers.study-reader]
 url = "http://127.0.0.1:PORT/study-reader/mcp"
-bearer_token_env_var = "DSH_STUDY_READER_TOKEN"
+http_headers = { Authorization = "Bearer <BEARER_TOKEN>" }
 ```
 
 Antigravity 可以直接连接同一个 Streamable HTTP 端点。把页面生成的配置写入
@@ -95,8 +96,8 @@ Antigravity 可以直接连接同一个 Streamable HTTP 端点。把页面生成
 }
 ```
 
-Antigravity 会把这个自定义 header 保存在 JSON 文件中，请保护该文件。浏览器
-默认遮住 Token，并且只在创建授权时显示一次。
+Codex 与 Antigravity 可以同时使用同一份授权。浏览器会明文显示 Token 和两种
+完整配置；任何有效授权都可从授权卡片点“查看配置”重新打开，不会更换 Token。
 
 然后在这份授权内创建多个命名书单。文献可来自全部文献、未分类、任一文件夹或
 本次对话；书单可以在浏览器中编辑、复制和删除，不会改变 Token 或客户端配置。

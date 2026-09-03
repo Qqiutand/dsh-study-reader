@@ -33,8 +33,11 @@ the bounded policy while document and write-authorization boundaries stay active
 Client authorizations are created under **Bookroom → External AI access**. Each
 authorization is one loopback MCP URL plus one bearer token and may contain several
 named reading sets. The page generates both Codex and Antigravity configurations;
-editing sets does not rotate the token or change either client configuration. The picker supports
-all documents, uncategorized documents, library folders, current-conversation
+both are shown in plaintext and may be reopened for any active authorization.
+The clients may share one authorization, and the Codex configuration requires
+neither an environment variable nor OAuth login. Editing sets does not rotate
+the token or change either client configuration. The picker combines folder
+categories with independent all, selected, and unselected views, current-conversation
 documents, and copying an existing set. MCP exposes `reader_list_sets` plus the
 five read-only evidence tools; calls use a short `setRef` runtime selector when the
 authorization has multiple sets. It applies no server-side call-count budget. DSH Skills, presets,

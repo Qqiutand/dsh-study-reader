@@ -66,7 +66,7 @@ describe('embedded external MCP', () => {
       expiresInDays: 7,
     })
     expect(created.codexConfig).toContain('[mcp_servers.reader-probability]')
-    expect(created.codexConfig).toContain(`bearer_token_env_var = "${created.environmentVariable}"`)
+    expect(created.codexConfig).toContain(`http_headers = { Authorization = "Bearer ${created.token}" }`)
     expect(created.environmentVariable).toBe('DSH_STUDY_READER_PROBABILITY_TOKEN')
     expect(JSON.parse(created.antigravityConfig)).toEqual({
       mcpServers: {
@@ -76,6 +76,9 @@ describe('embedded external MCP', () => {
         },
       },
     })
+    const reopened = harness.ctx.study.externalAccessCredentialsForClient({ sessionId: 'mcp-test', accessId: created.connection.id })
+    expect(reopened.token).toBe(created.token)
+    expect(reopened.codexConfig).toContain(`Authorization = "Bearer ${created.token}"`)
 
     const unauthorized = await rpc(harness, undefined, 1, 'initialize', {
       protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' },
@@ -171,6 +174,7 @@ describe('embedded external MCP', () => {
       accessId: created.connection.id,
       expectedVersion: updatedConnection.version,
     })
+    expect(() => harness.ctx.study.externalAccessCredentialsForClient({ sessionId: 'mcp-test', accessId: created.connection.id })).toThrowError(expect.objectContaining({ code: 'PERMISSION_DENIED' }))
     const revoked = await rpc(harness, created.token, 8, 'tools/list')
     expect(revoked.response.status).toBe(401)
   })

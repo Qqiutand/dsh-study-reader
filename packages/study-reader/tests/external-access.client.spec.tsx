@@ -48,14 +48,14 @@ function renderAccess(remote: object) {
 }
 
 describe('ExternalAccess', () => {
-  it('creates one connection with its initial reading set and shows one-time credentials', async () => {
+  it('creates one connection and shows reusable plaintext configurations for both clients', async () => {
     const externalAccessSnapshot = vi.fn(async () => ({ ok: true as const, value: baseSnapshot }))
     const createExternalAccess = vi.fn(async () => ({ ok: true as const, value: {
       connection,
       token: 'dsr_v1.external-11111111111111111111111111111111.secret',
       mcpUrl: baseSnapshot.mcpUrl,
       environmentVariable: 'DSH_STUDY_READER_TOKEN',
-      codexConfig: '[mcp_servers.study-reader]\nurl = "http://127.0.0.1:2026/study-reader/mcp"',
+      codexConfig: '[mcp_servers.study-reader]\nurl = "http://127.0.0.1:2026/study-reader/mcp"\nhttp_headers = { Authorization = "Bearer dsr_v1.external-11111111111111111111111111111111.secret" }',
       antigravityConfig: '{\n  "mcpServers": {\n    "study-reader": {\n      "serverUrl": "http://127.0.0.1:2026/study-reader/mcp",\n      "headers": {\n        "Authorization": "Bearer dsr_v1.external-11111111111111111111111111111111.secret"\n      }\n    }\n  }\n}',
     } }))
     renderAccess({ externalAccessSnapshot, createExternalAccess })
@@ -76,15 +76,14 @@ describe('ExternalAccess', () => {
       sourceIds: ['source-1'],
       expiresInDays: 365,
     })
-    const secret = await screen.findByLabelText('访问密钥') as HTMLInputElement
-    expect(secret.type).toBe('password')
-    expect(secret.value).toMatch(/dsr_v1\.external-1111/u)
-    expect(document.body.textContent).not.toContain(secret.value)
-    fireEvent.click(screen.getByRole('button', { name: '显示' }))
-    expect(secret.type).toBe('text')
+    expect(await screen.findByRole('heading', { name: 'Codex · 客户端配置' })).toBeTruthy()
+    expect(screen.getAllByText(/dsr_v1\.external-1111/u).length).toBeGreaterThan(1)
     expect(screen.getByText(/mcp_servers\.study-reader/u)).toBeTruthy()
+    expect(screen.getByText(/http_headers = \{ Authorization = "Bearer/u)).toBeTruthy()
     expect(screen.getByLabelText('Antigravity')).toBeTruthy()
-    expect(screen.getAllByText(/<BEARER_TOKEN>/u)).toHaveLength(2)
+    expect(screen.queryByText(/<BEARER_TOKEN>/u)).toBeNull()
+    expect(screen.queryByRole('button', { name: '隐藏' })).toBeNull()
+    expect(screen.getAllByText(/不要运行 codex mcp login/u).length).toBeGreaterThan(0)
     expect(screen.getByText(/"serverUrl": "http:\/\/127\.0\.0\.1:2026\/study-reader\/mcp"/u)).toBeTruthy()
   })
 
@@ -105,14 +104,19 @@ describe('ExternalAccess', () => {
     fireEvent.change(screen.getByRole('combobox', { name: '文献分类' }), { target: { value: 'uncategorized' } })
     expect(screen.queryByRole('checkbox', { name: /Probability/u })).toBeNull()
     fireEvent.click(screen.getByRole('checkbox', { name: /Optics/u }))
-    fireEvent.change(screen.getByRole('combobox', { name: '文献分类' }), { target: { value: 'selected' } })
-    expect(screen.getByRole('option', { name: '已勾选 (2)' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '已勾选 (1)' }))
+    expect(screen.queryByRole('checkbox', { name: /Probability/u })).toBeNull()
+    expect((screen.getByRole('checkbox', { name: /Optics/u }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByRole('checkbox', { name: /Optics/u }).closest('label')?.querySelector('[data-format="epub"]')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '未勾选 (0)' }))
+    expect(screen.queryByRole('checkbox', { name: /Optics/u })).toBeNull()
+    expect(screen.getByText('当前范围内没有未勾选文献。')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '全部 (1)' }))
+    fireEvent.change(screen.getByRole('combobox', { name: '文献分类' }), { target: { value: 'all' } })
     const selectedProbability = screen.getByRole('checkbox', { name: /Probability/u }) as HTMLInputElement
     expect(selectedProbability.checked).toBe(true)
     expect(selectedProbability.closest('label')?.dataset.selected).toBe('true')
     expect(selectedProbability.closest('label')?.querySelector('[data-kind="folder"]')?.getAttribute('data-tone')).not.toBe('neutral')
-    expect((screen.getByRole('checkbox', { name: /Optics/u }) as HTMLInputElement).checked).toBe(true)
-    expect(screen.getByRole('checkbox', { name: /Optics/u }).closest('label')?.querySelector('[data-format="epub"]')).toBeTruthy()
     expect(screen.getAllByRole('checkbox')).toHaveLength(2)
     fireEvent.change(screen.getByLabelText('书单名称'), { target: { value: 'Optics' } })
     fireEvent.click(screen.getAllByRole('button', { name: '添加书单' })[0]!)
@@ -123,6 +127,26 @@ describe('ExternalAccess', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0]!)
     expect(screen.getByDisplayValue('Probability')).toBeTruthy()
+  })
+
+  it('reopens the same active token and client configurations from an authorization card', async () => {
+    const snapshot = { ...baseSnapshot, connections: [connection] }
+    const credentials = {
+      connection,
+      token: 'dsr_v1.external-11111111111111111111111111111111.secret',
+      mcpUrl: baseSnapshot.mcpUrl,
+      environmentVariable: 'DSH_STUDY_READER_TOKEN',
+      codexConfig: '[mcp_servers.study-reader]\nurl = "http://127.0.0.1:2026/study-reader/mcp"\nhttp_headers = { Authorization = "Bearer dsr_v1.external-11111111111111111111111111111111.secret" }',
+      antigravityConfig: '{"mcpServers":{"study-reader":{"serverUrl":"http://127.0.0.1:2026/study-reader/mcp","headers":{"Authorization":"Bearer dsr_v1.external-11111111111111111111111111111111.secret"}}}}',
+    }
+    const externalAccessSnapshot = vi.fn(async () => ({ ok: true as const, value: snapshot }))
+    const externalAccessCredentials = vi.fn(async () => ({ ok: true as const, value: credentials }))
+    renderAccess({ externalAccessSnapshot, externalAccessCredentials })
+
+    fireEvent.click(await screen.findByRole('button', { name: '查看配置' }))
+    await waitFor(() => expect(externalAccessCredentials).toHaveBeenCalledWith({ sessionId: 'session-1', accessId: connection.id }))
+    expect(await screen.findByRole('heading', { name: 'Codex · 客户端配置' })).toBeTruthy()
+    expect(screen.getAllByText(/dsr_v1\.external-1111/u).length).toBeGreaterThan(1)
   })
 
   it('hides revoked connections from the management list', async () => {

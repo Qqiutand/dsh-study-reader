@@ -203,6 +203,12 @@ export class ExternalAccessManager {
     return externalReadingSets(this.requireActive(accessId))
   }
 
+  /** Recreate the stable bearer token for an active browser-managed authorization. */
+  credentials(accessId: string): { readonly record: ExternalAccessRecord; readonly token: string } {
+    const record = this.requireActive(accessId)
+    return { record, token: this.tokenFor(record.id) }
+  }
+
   resolveSet(accessId: string, setRef?: string): ExternalReadingSetRecord {
     const sets = this.listSets(accessId)
     if (setRef === undefined) {

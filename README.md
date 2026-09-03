@@ -73,13 +73,15 @@ the security boundary for every reading set placed under it. Create another
 authorization when a client needs independently scoped, expiring, or revocable
 access. Keep `pnpm dsh web` running while an external client uses the Reader.
 
-For Codex, export the one-time token before starting it and add the generated
-block to `~/.codex/config.toml`:
+For Codex, add the complete generated block to `~/.codex/config.toml` and
+restart Codex. The configuration carries the bearer token directly, so it does
+not require `.bashrc`, an environment variable, or `codex mcp login` (which is
+for OAuth):
 
 ```toml
 [mcp_servers.study-reader]
 url = "http://127.0.0.1:PORT/study-reader/mcp"
-bearer_token_env_var = "DSH_STUDY_READER_TOKEN"
+http_headers = { Authorization = "Bearer <BEARER_TOKEN>" }
 ```
 
 Antigravity can connect directly to the same Streamable HTTP endpoint. Add the
@@ -99,8 +101,10 @@ generated block to `~/.gemini/config/mcp_config.json` or the workspace-local
 }
 ```
 
-Antigravity stores this custom header in the JSON file, so protect that file.
-The browser masks the token by default and displays it only once.
+Codex and Antigravity may use the same authorization at the same time. The
+browser displays the token and both complete configurations in plaintext; use
+**View configuration** on any active authorization to reopen them without
+rotating the token.
 
 Inside an authorization, create named reading sets from the whole library,
 uncategorized documents, a library folder, or the current conversation. Sets can

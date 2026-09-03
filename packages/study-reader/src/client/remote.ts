@@ -11,7 +11,7 @@ import type {
   SourceSummary, StudyBootstrapView, ToolDescriptorView,
   ProviderConnectionView,
   WorkspaceDefaultView, SaveWorkspaceDefaultRequest, ClearWorkspaceDefaultRequest,
-  CreateExternalAccessRequest, CreateExternalAccessResult, ExternalAccessSnapshot,
+  CreateExternalAccessRequest, CreateExternalAccessResult, ExternalAccessCredentialsRequest, ExternalAccessSnapshot,
   DeleteExternalReadingSetRequest, ExternalAccessView, RevokeExternalAccessRequest, SaveExternalReadingSetRequest,
 } from '../study/types.ts'
 import type {
@@ -49,6 +49,7 @@ export interface StudyRemote {
   clearWorkspaceDefault(request: ClearWorkspaceDefaultRequest): Call<WorkspaceDefaultView>
   externalAccessSnapshot(request: { readonly sessionId: string }): Call<ExternalAccessSnapshot>
   createExternalAccess(request: CreateExternalAccessRequest): Call<CreateExternalAccessResult>
+  externalAccessCredentials(request: ExternalAccessCredentialsRequest): Call<CreateExternalAccessResult>
   saveExternalReadingSet(request: SaveExternalReadingSetRequest): Call<ExternalAccessView>
   deleteExternalReadingSet(request: DeleteExternalReadingSetRequest): Call<ExternalAccessView>
   revokeExternalAccess(request: RevokeExternalAccessRequest): Call<ExternalAccessView>

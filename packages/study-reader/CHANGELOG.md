@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.3 - 2026-09-03
+
+- Made every active client authorization's stable bearer token and complete Codex/Antigravity configurations reopenable from the browser without rotating the token.
+- Changed generated Codex configuration to carry the Authorization header directly, removing the required environment-variable step and clarifying that OAuth `codex mcp login` does not apply.
+- Split document category from independent all, selected, and unselected filters so reading-set scope is easier to inspect within the current folder and search.
+
 ## 0.8.2 - 2026-09-03
 
 - Reframed external access as client authorization: one MCP URL and bearer token authorize one independently revocable collection of reading sets, while `setRef` only selects a set at tool-call time.

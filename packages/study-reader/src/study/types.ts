@@ -295,14 +295,19 @@ export interface CreateExternalAccessRequest {
   readonly expiresInDays: number
 }
 
-/** The bearer token is returned only by the explicit create command. */
+export interface ExternalAccessCredentialsRequest {
+  readonly sessionId: string
+  readonly accessId: string
+}
+
+/** Explicit browser-only projection of one active authorization and its client configurations. */
 export interface CreateExternalAccessResult {
   readonly connection: ExternalAccessView
   readonly token: string
   readonly mcpUrl: string
   readonly environmentVariable: string
   readonly codexConfig: string
-  /** Antigravity Streamable HTTP configuration. Contains the one-time bearer token. */
+  /** Antigravity Streamable HTTP configuration containing the bearer token. */
   readonly antigravityConfig: string
 }
 
