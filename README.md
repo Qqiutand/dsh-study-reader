@@ -10,7 +10,7 @@ _Illustrative empty state with no real documents or user data._
 
 ## Features
 
-- Persistent PDF/EPUB library with folders.
+- Persistent PDF/EPUB library with folders and multi-file import into one destination folder.
 - Original-document and MinerU structured previews without saved reading positions, with ZIP export of extraction results.
 - Conversation-scoped document access that keeps unrelated content out of context.
 - Loopback-only MCP access for Codex and other clients, limited to documents selected in the browser.
@@ -103,7 +103,7 @@ generated block to `~/.gemini/config/mcp_config.json` or the workspace-local
 
 Codex and Antigravity may use the same authorization at the same time. The
 browser displays the token and both complete configurations in plaintext; use
-**View configuration** on any active authorization to reopen them without
+**View token & config** on any active authorization to reopen them without
 rotating the token.
 
 Inside an authorization, create named reading sets from the whole library,

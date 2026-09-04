@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.5 - 2026-09-04
+
+- Added multi-file document import: one file-picker selection is admitted sequentially into the chosen library folder while each document continues processing independently in the background.
+- Kept later files moving when one selection fails, with live batch admission progress and a bounded failure summary.
+
 ## 0.8.4 - 2026-09-03
 
 - Kept the stable bearer token and client configurations within reach beside the authorization selector and at the top of each active authorization card.

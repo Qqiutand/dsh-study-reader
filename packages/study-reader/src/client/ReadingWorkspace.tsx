@@ -61,6 +61,7 @@ export function ReadingWorkspace({ studyRemote, sessionId, folderId, refreshVers
   const [imports, setImports] = useState<readonly ImportStatusView[]>([])
   const [importPollGeneration, setImportPollGeneration] = useState(0)
   const [importPollingEnabled, setImportPollingEnabled] = useState(false)
+  const [uploadBatchProgress, setUploadBatchProgress] = useState<{ readonly current: number; readonly total: number; readonly fileName: string }>()
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string>()
   const [pdfPreviewMode, setPdfPreviewMode] = useState<'semantic' | 'original'>('original')
@@ -81,6 +82,8 @@ export function ReadingWorkspace({ studyRemote, sessionId, folderId, refreshVers
     document.addEventListener('pointerdown', close)
     return () => document.removeEventListener('pointerdown', close)
   }, [menuSourceId])
+
+  useEffect(() => () => uploadRef.current?.abort(), [])
 
   const selected = sources.find(source => String(source.id) === selectedId)
   const normalizedAssetRoute = `/${assetRoute.split('/').filter(Boolean).join('/')}`
@@ -134,7 +137,7 @@ export function ReadingWorkspace({ studyRemote, sessionId, folderId, refreshVers
     let timer: ReturnType<typeof setTimeout> | undefined
     let previouslyActive = false
     const poll = async (): Promise<void> => {
-      const result = await studyRemote.listImportStatuses({ limit: 25 })
+      const result = await studyRemote.listImportStatuses({ limit: 100 })
       if (cancelled || !result.ok) return
       setImports(result.value)
       const active = result.value.some(item => !['ready', 'failed', 'cancelled'].includes(item.state))
@@ -267,25 +270,56 @@ export function ReadingWorkspace({ studyRemote, sessionId, folderId, refreshVers
   }
 
   const upload = (event: ChangeEvent<HTMLInputElement>): void => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (file === undefined || studyRemote === undefined || sessionId === undefined) return
+    const files = Array.from(event.currentTarget.files ?? [])
+    event.currentTarget.value = ''
+    if (files.length === 0 || studyRemote === undefined || sessionId === undefined) return
     setImportDialogOpen(false)
     uploadRef.current?.abort()
     const controller = new AbortController()
     uploadRef.current = controller
+    const options = { sessionId, ...(targetFolderId === '' ? {} : { targetFolderId }), language, isOcr, enableTable, enableFormula }
+    setNotice(undefined)
     setBusy(true)
-    void beginFileUpload(studyRemote, file, controller.signal, { sessionId, ...(targetFolderId === '' ? {} : { targetFolderId }), language, isOcr, enableTable, enableFormula })
-      .then(async (status: ImportStatusView) => {
-        setImports(current => [status, ...current.filter(item => item.importId !== status.importId)])
-        setImportPollGeneration(current => current + 1)
-        setImportPollingEnabled(true)
-        setNotice(status.state === 'failed' ? status.failure?.message ?? b('导入失败', 'Import failed') : b('文献已提交，后台正在处理。', 'Document submitted for background processing.'))
-        await loadSources()
-        await loadLibraryAssets()
-      })
+    void (async () => {
+      let admittedCount = 0
+      const failures: string[] = []
+      for (const [index, file] of files.entries()) {
+        if (controller.signal.aborted) return
+        setUploadBatchProgress({ current: index + 1, total: files.length, fileName: file.name })
+        try {
+          const status = await beginFileUpload(studyRemote, file, controller.signal, options)
+          admittedCount += 1
+          setImports(current => [status, ...current.filter(item => item.importId !== status.importId)])
+          if (admittedCount === 1) {
+            setImportPollGeneration(current => current + 1)
+            setImportPollingEnabled(true)
+          }
+          if (status.state === 'failed' || status.state === 'cancelled') failures.push(`${file.name}: ${status.failure?.message ?? b('导入失败', 'Import failed')}`)
+        } catch (error) {
+          if (controller.signal.aborted) return
+          failures.push(`${file.name}: ${error instanceof Error ? error.message : b('导入失败', 'Import failed')}`)
+        }
+      }
+      if (controller.signal.aborted) return
+      if (admittedCount > 0) {
+        await Promise.all([loadSources(), loadLibraryAssets()])
+        if (controller.signal.aborted) return
+      }
+      const succeeded = files.length - failures.length
+      const failureDetails = failures.slice(0, 3).join(b('；', '; '))
+      const omittedFailures = Math.max(0, failures.length - 3)
+      const failureSuffix = omittedFailures === 0 ? '' : b(`；另有 ${String(omittedFailures)} 篇失败`, `; ${String(omittedFailures)} more failed`)
+      if (failures.length === 0) setNotice(b(`已提交 ${String(succeeded)} 篇文献，后台正在处理。`, `${String(succeeded)} documents submitted for background processing.`))
+      else if (succeeded === 0) setNotice(b(`这批 ${String(files.length)} 篇文献均未能导入：${failureDetails}${failureSuffix}`, `None of the ${String(files.length)} documents could be imported: ${failureDetails}${failureSuffix}`))
+      else setNotice(b(`已提交 ${String(succeeded)} 篇文献，${String(failures.length)} 篇失败：${failureDetails}${failureSuffix}`, `${String(succeeded)} documents submitted; ${String(failures.length)} failed: ${failureDetails}${failureSuffix}`))
+    })()
       .catch(error => { if (!controller.signal.aborted) setNotice(error instanceof Error ? error.message : b('导入失败', 'Import failed')) })
-      .finally(() => setBusy(false))
+      .finally(() => {
+        if (uploadRef.current !== controller) return
+        uploadRef.current = undefined
+        setUploadBatchProgress(undefined)
+        setBusy(false)
+      })
   }
 
   const originalUrl = previewView === undefined || !('originalUrl' in previewView) ? undefined : previewView.originalUrl
@@ -342,7 +376,7 @@ export function ReadingWorkspace({ studyRemote, sessionId, folderId, refreshVers
     <style data-plugin-css="ui-study/reading-workspace">{READING_WORKSPACE_CSS}</style>
     <header className={css.header}>
       <div><strong>{b('书房', 'Bookroom')}</strong>{selected === undefined ? <span>{b('选择一本文献开始阅读', 'Select a document to begin')}</span> : <span>{selected.title}</span>}</div>
-      <nav aria-label={b('书房操作', 'Bookroom actions')}><button type="button" aria-expanded={libraryOpen} aria-controls="study-library-panel" onClick={() => setLibraryOpen(value => !value)}>{libraryOpen ? b('收起书库', 'Hide library') : b('展开书库', 'Show library')}</button>{selected === undefined ? null : <button type="button" aria-pressed={outlineOpen} onClick={() => setOutlineOpen(value => !value)}>{b('目录', 'Outline')}</button>}{selected === undefined ? null : <button type="button" data-conversation-available={selected.granted === false ? 'false' : 'true'} disabled={busy} onClick={() => { void setAccess(selected, selected.granted === false) }}>{selected.granted === false ? b('加入本次对话', 'Add to conversation') : b('移出本次对话', 'Remove from conversation')}</button>}{originalUrl === undefined ? null : <><a href={originalUrl} target="_blank" rel="noreferrer">{b('打开原文件', 'Open original')}</a><a href={originalUrl} download={selected?.originalFileName ?? selected?.title}>{b('下载原文件', 'Download original')}</a></>}{previewView?.kind === 'pdf' && previewView.semanticExportUrl !== undefined ? <a href={previewView.semanticExportUrl} download>{b('导出识别结果', 'Export extracted data')}</a> : null}<button type="button" className={css.importButton} onClick={() => setImportDialogOpen(true)}>{b('导入文献', 'Import document')}</button></nav>
+      <nav aria-label={b('书房操作', 'Bookroom actions')}><button type="button" aria-expanded={libraryOpen} aria-controls="study-library-panel" onClick={() => setLibraryOpen(value => !value)}>{libraryOpen ? b('收起书库', 'Hide library') : b('展开书库', 'Show library')}</button>{selected === undefined ? null : <button type="button" aria-pressed={outlineOpen} onClick={() => setOutlineOpen(value => !value)}>{b('目录', 'Outline')}</button>}{selected === undefined ? null : <button type="button" data-conversation-available={selected.granted === false ? 'false' : 'true'} disabled={busy} onClick={() => { void setAccess(selected, selected.granted === false) }}>{selected.granted === false ? b('加入本次对话', 'Add to conversation') : b('移出本次对话', 'Remove from conversation')}</button>}{originalUrl === undefined ? null : <><a href={originalUrl} target="_blank" rel="noreferrer">{b('打开原文件', 'Open original')}</a><a href={originalUrl} download={selected?.originalFileName ?? selected?.title}>{b('下载原文件', 'Download original')}</a></>}{previewView?.kind === 'pdf' && previewView.semanticExportUrl !== undefined ? <a href={previewView.semanticExportUrl} download>{b('导出识别结果', 'Export extracted data')}</a> : null}<button type="button" className={css.importButton} disabled={uploadBatchProgress !== undefined} onClick={() => setImportDialogOpen(true)}>{uploadBatchProgress === undefined ? b('导入文献', 'Import document') : b('正在提交…', 'Submitting…')}</button></nav>
     </header>
     {importDialogOpen ? <div className={css.dialogBackdrop} role="presentation"><section role="dialog" aria-modal="true" aria-labelledby="study-import-title" className={css.importDialog}>
       <header><h2 id="study-import-title">{b('导入文献', 'Import document')}</h2><button type="button" aria-label={b('关闭导入文献', 'Close import dialog')} onClick={() => setImportDialogOpen(false)}>×</button></header>
@@ -354,9 +388,10 @@ export function ReadingWorkspace({ studyRemote, sessionId, folderId, refreshVers
       <label><input type="checkbox" checked={isOcr} onChange={event => setIsOcr(event.target.checked)} /> OCR</label>
       <label><input type="checkbox" checked={enableTable} onChange={event => setEnableTable(event.target.checked)} /> {b('表格识别', 'Table recognition')}</label>
       <label><input type="checkbox" checked={enableFormula} onChange={event => setEnableFormula(event.target.checked)} /> {b('公式识别', 'Formula recognition')}</label>
-      <p>{b('识别语言仅用于 PDF；EPUB 使用本地文本解析。', 'Recognition language applies to PDF only; EPUB is parsed locally.')}</p>
-      <label className={css.importButton}>{b('选择文件', 'Choose file')}<input aria-label={b('选择要导入的文献', 'Choose a document to import')} type="file" accept={DEFAULT_ACCEPT} onChange={upload} /></label>
+      <p>{b('识别语言仅用于 PDF；EPUB 使用本地文本解析。可在文件选择器中用 Ctrl、Command 或 Shift 一次选择多本，所选文件都会进入同一个目标文件夹。', 'Recognition language applies to PDF only; EPUB is parsed locally. Use Ctrl, Command, or Shift in the file picker to select multiple documents; all selected files go to the same destination folder.')}</p>
+      <label className={css.importButton}>{b('选择文件（可多选）', 'Choose files')}<input aria-label={b('选择要导入的文献（可多选）', 'Choose documents to import')} type="file" accept={DEFAULT_ACCEPT} multiple onChange={upload} /></label>
     </section></div> : null}
+    {uploadBatchProgress === undefined ? null : <p role="status" aria-live="polite" className={css.notice}>{b(`正在提交 ${String(uploadBatchProgress.current)}/${String(uploadBatchProgress.total)}：${uploadBatchProgress.fileName}`, `Submitting ${String(uploadBatchProgress.current)}/${String(uploadBatchProgress.total)}: ${uploadBatchProgress.fileName}`)}</p>}
     {notice === undefined ? null : <p role="status" className={css.notice}>{notice}</p>}
     {activeImports.length === 0 && failedImports.length === 0 ? null : <section aria-label={b('导入状态', 'Import status')} className={css.importStatus}>
       {activeImports.map(item => <p key={String(item.importId)}><span className={css.statusDot} data-state="active" /><strong>{item.displayName}</strong> · {b('处理中', 'Processing')}{item.progress?.totalPages === undefined ? '' : ` · ${item.progress.completedPages ?? 0}/${item.progress.totalPages} ${b('页', 'pages')}`}</p>)}

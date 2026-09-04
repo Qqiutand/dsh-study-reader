@@ -173,6 +173,64 @@ describe('lightweight library workspace', () => {
     const select=await screen.findByLabelText('PDF / MinerU 识别语言') as HTMLSelectElement
     expect([...select.options].map(option=>option.value)).toEqual(['ch','en','korean','japan','french','german','spanish','russian'])
   })
+  it('admits multiple selected files sequentially into the chosen folder', async () => {
+    let preparedCount=0
+    const prepareUpload=vi.fn(async(request:any)=>{
+      preparedCount+=1
+      return {ok:true,value:{importId:`import-${preparedCount}`,uploadPath:`/upload/${preparedCount}`,uploadToken:`${request.fileName}-token`}}
+    })
+    const importStatus=vi.fn(async(request:any)=>({ok:true,value:{
+      importId:request.importId,
+      state:'queued',
+      displayName:request.importId==='import-1'?'First.pdf':'Second.epub',
+      availableActions:[],
+      renewRequired:false,
+    }}))
+    const uploadFetch=vi.fn(async()=>new Response(null,{status:200}))
+    vi.stubGlobal('fetch',uploadFetch)
+    const api=remote({
+      prepareUpload,
+      importStatus,
+      listSources:vi.fn(async()=>({ok:true,value:[]})),
+      getLibrarySnapshot:vi.fn(async()=>({ok:true,value:{selection:{schemaVersion:1,sessionId:'s',version:0,updatedAt:0},sources:[],assetRoute:'/assets',defaultLanguage:'ch',folders:[{id:'research',name:'Research'}],activeImports:[]}})),
+    })
+    render(<ReadingWorkspace studyRemote={api} sessionId="s" />)
+    fireEvent.click(await screen.findByRole('button',{name:'导入文献'}))
+    fireEvent.change(await screen.findByLabelText('导入目标文件夹'),{target:{value:'research'}})
+    const input=screen.getByLabelText('选择要导入的文献（可多选）') as HTMLInputElement
+    expect(input.multiple).toBe(true)
+    const first=new File([new Uint8Array([1])],'First.pdf',{type:'application/pdf'})
+    const second=new File([new Uint8Array([2])],'Second.epub',{type:'application/epub+zip'})
+    fireEvent.change(input,{target:{files:[first,second]}})
+
+    await waitFor(()=>expect(prepareUpload).toHaveBeenCalledTimes(2))
+    expect(prepareUpload.mock.calls.map(call=>call[0])).toEqual([
+      expect.objectContaining({fileName:'First.pdf',targetFolderId:'research',sessionId:'s'}),
+      expect.objectContaining({fileName:'Second.epub',targetFolderId:'research',sessionId:'s'}),
+    ])
+    expect(importStatus.mock.calls.map(call=>call[0].importId)).toEqual(['import-1','import-2'])
+    expect(uploadFetch).toHaveBeenCalledTimes(2)
+    expect(await screen.findByText('已提交 2 篇文献，后台正在处理。')).toBeDefined()
+  })
+  it('continues a multi-file import after one file is rejected', async () => {
+    const prepareUpload=vi.fn()
+      .mockResolvedValueOnce({ok:false,error:{code:'FILE_TYPE_UNSUPPORTED',message:'unsupported'}})
+      .mockResolvedValueOnce({ok:true,value:{importId:'import-good',uploadPath:'/upload/good',uploadToken:'token-good'}})
+    const importStatus=vi.fn(async()=>({ok:true,value:{importId:'import-good',state:'queued',displayName:'Good.pdf',availableActions:[],renewRequired:false}}))
+    vi.stubGlobal('fetch',vi.fn(async()=>new Response(null,{status:200})))
+    const api=remote({prepareUpload,importStatus,listSources:vi.fn(async()=>({ok:true,value:[]}))})
+    render(<ReadingWorkspace studyRemote={api} sessionId="s" />)
+    fireEvent.click(await screen.findByRole('button',{name:'导入文献'}))
+    const input=screen.getByLabelText('选择要导入的文献（可多选）')
+    fireEvent.change(input,{target:{files:[
+      new File([new Uint8Array([1])],'Bad.bin'),
+      new File([new Uint8Array([2])],'Good.pdf',{type:'application/pdf'}),
+    ]}})
+
+    await waitFor(()=>expect(prepareUpload).toHaveBeenCalledTimes(2))
+    expect(importStatus).toHaveBeenCalledWith({importId:'import-good'})
+    expect(await screen.findByText(/已提交 1 篇文献，1 篇失败：Bad\.bin: FILE_TYPE_UNSUPPORTED/u)).toBeDefined()
+  })
   it('refreshes import folder choices after an asset-tree change and lists currently visible documents', async () => {
     const source={id:'src',title:'Visible Book',recordVersion:1,kind:'book',format:'pdf',revisionId:'rev',granted:true}
     const getLibrarySnapshot=vi.fn()

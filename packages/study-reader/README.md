@@ -17,7 +17,7 @@ This installs dependencies, builds and verifies the package, installs the
 
 ## Features
 
-- PDF/EPUB library and folders
+- PDF/EPUB library, folders, and multi-file import into one destination folder
 - Original PDF/EPUB preview plus bounded MinerU structured preview and ZIP export
 - Conversation-scoped document access
 - Browser-managed, loopback-only read access for Codex, Antigravity, and other MCP clients

@@ -17,7 +17,7 @@ pnpm run install:dsh -- --dsh-home "$HOME/.dsh"
 
 ## 功能
 
-- PDF/EPUB 文献库与文件夹
+- PDF/EPUB 文献库与文件夹，可一次多选并导入同一目标文件夹
 - 原版 PDF/EPUB 预览和有界 MinerU 结构化预览
 - 本次对话范围内的文献权限
 - 可在浏览器中为 Codex、Antigravity 等客户端管理仅限本机的只读 MCP 授权
